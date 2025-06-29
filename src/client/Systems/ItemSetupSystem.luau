@@ -10,9 +10,9 @@ local ItemDefinitions = require(ReplicatedStorage.Shared.ItemDefinitions)
 local Constants = require(ReplicatedStorage.Shared.Constants)
 
 -- Component classes
-local Draggable = require(ReplicatedStorage.Shared.Components.Draggable)
-local Hoverable = require(ReplicatedStorage.Shared.Components.Hoverable)
-local Inventoryable = require(ReplicatedStorage.Shared.Components.Inventoryable)
+local Draggable = require(ReplicatedStorage.Shared.components.Draggable)
+local Hoverable = require(ReplicatedStorage.Shared.components.Hoverable)
+local Inventoryable = require(ReplicatedStorage.Shared.components.Inventoryable)
 
 local processedItems = {}
 

@@ -7,6 +7,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RemoteEvents = require(ReplicatedStorage.Shared.RemoteEvents)
 local ItemDefinitions = require(ReplicatedStorage.Shared.ItemDefinitions)
 local ECS = require(ReplicatedStorage.Shared.ECS)
+local Categories = require(ReplicatedStorage.Shared.ItemCategory)
 
 -- Player armor storage (server-side, separate from inventory)
 local playerArmor = {}
@@ -134,11 +135,11 @@ function ArmorServerSystem:EquipArmor(player, armorSlot, hotbarItem)
     end
     
     print("[ARMOR SERVER DEBUG] Item definition details:")
-    print("[ARMOR SERVER DEBUG]   - Type:", itemDef.itemType)
+    print("[ARMOR SERVER DEBUG]   - Category:", itemDef.category)
     print("[ARMOR SERVER DEBUG]   - Armor Slot:", itemDef.armorSlot)
     
-    if itemDef.itemType ~= "armor" then
-        print("[ARMOR SERVER DEBUG] ERROR: Item is not armor, type:", itemDef.itemType)
+    if itemDef.category ~= Categories.Armor then
+        print("[ARMOR SERVER DEBUG] ERROR: Item is not armor, category:", itemDef.category)
         return false, "Item is not armor"
     end
     

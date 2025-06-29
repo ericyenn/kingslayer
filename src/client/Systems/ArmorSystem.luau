@@ -7,6 +7,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local RemoteEvents = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("RemoteEvents"))
 local ItemDefinitions = require(ReplicatedStorage.Shared.ItemDefinitions)
+local Categories = require(ReplicatedStorage.Shared.ItemCategory)
 
 local player = Players.LocalPlayer
 
@@ -96,12 +97,12 @@ function ArmorSystem:TryEquipArmorFromHotbar(armorSlot)
     end
     
     print("[ARMOR DEBUG] Item definition details:")
-    print("[ARMOR DEBUG]   - Type:", itemDef.itemType)
+    print("[ARMOR DEBUG]   - Category:", itemDef.category)
     print("[ARMOR DEBUG]   - Armor Slot:", itemDef.armorSlot)
     print("[ARMOR DEBUG]   - Expected slot:", armorSlot)
     
-    if itemDef.itemType ~= "armor" then
-        print("[ARMOR DEBUG] ERROR: Equipped item is not armor (type:", itemDef.itemType, ")")
+    if itemDef.category ~= Categories.Armor then
+        print("[ARMOR DEBUG] ERROR: Equipped item is not armor (category:", itemDef.category, ")")
         return
     end
     
@@ -275,6 +276,39 @@ function ArmorSystem:NotifyInventorySystemArmorUnequipped(armorItem)
     end
     
     print("[ARMOR DEBUG] --- NotifyInventorySystemArmorUnequipped END ---")
+end
+
+function ArmorSystem:TryEquipFromUse(heldItem)
+    print("[ARMOR DEBUG] --- TryEquipFromUse START ---")
+    print("[ARMOR DEBUG] Attempting to equip from use:", heldItem and heldItem.itemName or "UNKNOWN")
+
+    if not heldItem or not heldItem.itemId then
+        print("[ARMOR DEBUG] ERROR: Invalid held item data")
+        return
+    end
+
+    local itemDef = ItemDefinitions:GetItem(heldItem.itemId)
+    if not itemDef or itemDef.category ~= Categories.Armor or not itemDef.armorSlot then
+        print("[ARMOR DEBUG] ERROR: Held item is not valid armor or has no armor slot defined")
+        return
+    end
+
+    local armorSlot = itemDef.armorSlot
+    print("[ARMOR DEBUG] Target armor slot:", armorSlot)
+
+    -- Check if the target armor slot is already occupied
+    if playerArmor[armorSlot] then
+        print("[ARMOR DEBUG] Armor slot", armorSlot, "is already occupied by", playerArmor[armorSlot].itemName)
+        -- Optionally, open the armor menu here to allow manual swapping
+        self:Show()
+        return
+    end
+
+    print("[ARMOR DEBUG] Armor slot", armorSlot, "is free. Proceeding with equip request.")
+    -- The server request requires the full hotbarItem object, which includes the .object reference
+    self:RequestArmorEquip(armorSlot, heldItem)
+
+    print("[ARMOR DEBUG] --- TryEquipFromUse END ---")
 end
 
 -- Public methods for other systems

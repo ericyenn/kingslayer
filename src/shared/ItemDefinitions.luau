@@ -1,30 +1,47 @@
 -- Item definitions with component configurations
 local ItemDefinitions = {}
+local Categories = require(script.Parent.ItemCategory)
+local Color3 = Color3 -- Assume Color3 is globally available or imported if necessary
+
+-- Helper function for deep merging tables
+local function mergeTables(t1, t2)
+    local t3 = {}
+    for k, v in pairs(t1) do
+        t3[k] = v
+    end
+    for k, v in pairs(t2) do
+        if type(v) == "table" and type(t3[k]) == "table" then
+            t3[k] = mergeTables(t3[k], v)
+        else
+            t3[k] = v
+        end
+    end
+    return t3
+end
 
 ItemDefinitions.items = {
     hammer = {
         name = "Hammer",
         description = "A sturdy tool for construction and repairs. Perfect for driving nails and breaking things.",
         model = "HammerModel", -- Reference to model in ReplicatedStorage
-        itemType = "tool",
+        category = Categories.Tool,
         mouseDownAction = "hammer_action",
         components = {
+            -- Draggable, Hoverable, Inventoryable components will be merged from defaults
+            -- Only specify unique overrides here
             Draggable = {
-                force = 16000,
-                maxDistance = 50,
-                dampening = 0.8
+                force = 16000, -- Override default force
+                maxDistance = 50, -- Override default maxDistance
+                dampening = 0.8 -- Override default dampening
             },
             Hoverable = {
                 displayName = "Hammer",
-                description = "A sturdy tool for construction and repairs. Perfect for driving nails and breaking things.",
-                highlightColor = Color3.fromRGB(255, 255, 0)
+                description = "A sturdy tool for construction and repairs. Perfect for driving nails and breaking things."
+                -- highlightColor will come from default
             },
             Inventoryable = {
-                stackable = false,
-                maxStack = 1,
-                category = "Tools",
-                inventoryIcon = "🔨",
-                canPickup = true
+                -- category field is now at top-level, not in Inventoryable component
+                inventoryIcon = "🔨"
             }
         }
     },
@@ -33,7 +50,7 @@ ItemDefinitions.items = {
         name = "Wrench",
         description = "An adjustable wrench for mechanical work. Essential for any toolkit.",
         model = "WrenchModel",
-        itemType = "tool",
+        category = Categories.Tool,
         mouseDownAction = "wrench_action",
         components = {
             Draggable = {
@@ -43,15 +60,10 @@ ItemDefinitions.items = {
             },
             Hoverable = {
                 displayName = "Wrench",
-                description = "An adjustable wrench for mechanical work. Essential for any toolkit.",
-                highlightColor = Color3.fromRGB(0, 255, 255)
+                description = "An adjustable wrench for mechanical work. Essential for any toolkit."
             },
             Inventoryable = {
-                stackable = false,
-                maxStack = 1,
-                category = "Tools",
-                inventoryIcon = "🔧",
-                canPickup = true
+                inventoryIcon = "🔧"
             }
         }
     },
@@ -60,7 +72,7 @@ ItemDefinitions.items = {
         name = "Screwdriver",
         description = "A precision tool for screws and small fasteners. Handle with care.",
         model = "ScrewdriverModel",
-        itemType = "tool",
+        category = Categories.Tool,
         mouseDownAction = "screwdriver_action",
         components = {
             Draggable = {
@@ -70,15 +82,10 @@ ItemDefinitions.items = {
             },
             Hoverable = {
                 displayName = "Screwdriver",
-                description = "A precision tool for screws and small fasteners. Handle with care.",
-                highlightColor = Color3.fromRGB(255, 0, 255)
+                description = "A precision tool for screws and small fasteners. Handle with care."
             },
             Inventoryable = {
-                stackable = false,
-                maxStack = 1,
-                category = "Tools",
-                inventoryIcon = "🪛",
-                canPickup = true
+                inventoryIcon = "🪛"
             }
         }
     },
@@ -88,7 +95,7 @@ ItemDefinitions.items = {
         name = "Helmet",
         description = "Protective headgear that shields your head from damage.",
         model = "HelmetModel",
-        itemType = "armor",
+        category = Categories.Armor,
         armorSlot = "helmet",
         mouseDownAction = "armor_helmet_action",
         components = {
@@ -99,15 +106,11 @@ ItemDefinitions.items = {
             },
             Hoverable = {
                 displayName = "Helmet",
-                description = "Protective headgear that shields your head from damage.",
-                highlightColor = Color3.fromRGB(150, 150, 255)
+                description = "Protective headgear that shields your head from damage."
+                -- highlightColor will come from default
             },
             Inventoryable = {
-                stackable = false,
-                maxStack = 1,
-                category = "Armor",
-                inventoryIcon = "⛑️",
-                canPickup = true
+                inventoryIcon = "⛑️"
             }
         }
     },
@@ -116,7 +119,7 @@ ItemDefinitions.items = {
         name = "Chestplate",
         description = "Heavy armor that protects your torso from attacks.",
         model = "ChestplateModel",
-        itemType = "armor",
+        category = Categories.Armor,
         armorSlot = "chestplate",
         mouseDownAction = "armor_chestplate_action",
         components = {
@@ -133,7 +136,7 @@ ItemDefinitions.items = {
             Inventoryable = {
                 stackable = false,
                 maxStack = 1,
-                category = "Armor",
+                category = Categories.Armor,
                 inventoryIcon = "🦺",
                 canPickup = true
             }
@@ -144,7 +147,7 @@ ItemDefinitions.items = {
         name = "Boots",
         description = "Sturdy footwear that protects your feet and improves mobility.",
         model = "BootsModel",
-        itemType = "armor",
+        category = Categories.Armor,
         armorSlot = "boots",
         mouseDownAction = "armor_boots_action",
         components = {
@@ -161,7 +164,7 @@ ItemDefinitions.items = {
             Inventoryable = {
                 stackable = false,
                 maxStack = 1,
-                category = "Armor",
+                category = Categories.Armor,
                 inventoryIcon = "🥾",
                 canPickup = true
             }
@@ -183,11 +186,11 @@ function ItemDefinitions:GetAllItemIds()
     return ids
 end
 
--- Get items by type
-function ItemDefinitions:GetItemsByType(itemType)
+-- Get items by category
+function ItemDefinitions:GetItemsByCategory(category)
     local items = {}
     for id, item in pairs(self.items) do
-        if item.itemType == itemType then
+        if item.category == category then
             items[id] = item
         end
     end
@@ -198,7 +201,7 @@ end
 function ItemDefinitions:GetArmorBySlot(armorSlot)
     local items = {}
     for id, item in pairs(self.items) do
-        if item.itemType == "armor" and item.armorSlot == armorSlot then
+        if item.category == Categories.Armor and item.armorSlot == armorSlot then
             items[id] = item
         end
     end
