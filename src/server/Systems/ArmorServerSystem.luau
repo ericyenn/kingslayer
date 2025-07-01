@@ -9,6 +9,8 @@ local ItemDefinitions = require(ReplicatedStorage.Shared.ItemDefinitions)
 local ECS = require(ReplicatedStorage.Shared.ECS)
 local Categories = require(ReplicatedStorage.Shared.ItemCategory)
 
+local InventoryServerSystem = require(script.Parent.InventoryServerSystem)
+
 -- Player armor storage (server-side, separate from inventory)
 local playerArmor = {}
 
@@ -151,14 +153,17 @@ function ArmorServerSystem:EquipArmor(player, armorSlot, hotbarItem)
     end
     
     print("[ARMOR SERVER DEBUG] Item compatibility validation passed")
-    
+
     -- Validate that player can equip this item (distance check)
-    local canEquip = self:CanPlayerEquipItem(player, hotbarItem.object)
-    print("[ARMOR SERVER DEBUG] Distance check result:", canEquip)
-    
-    if not canEquip then
-        print("[ARMOR SERVER DEBUG] ERROR: Player too far from item")
-        return false, "Player cannot equip this item"
+    -- IMPORTANT: Skip distance check if item is already in ReplicatedStorage (i.e., in inventory)
+    if hotbarItem.object.Parent ~= ReplicatedStorage then
+        local canEquip = self:CanPlayerEquipItem(player, hotbarItem.object)
+        print("[ARMOR SERVER DEBUG] Distance check result:", canEquip)
+        
+        if not canEquip then
+            print("[ARMOR SERVER DEBUG] ERROR: Player too far from item")
+            return false, "Player cannot equip this item"
+        end
     end
     
     -- Store armor information
@@ -183,6 +188,9 @@ function ArmorServerSystem:EquipArmor(player, armorSlot, hotbarItem)
     
     print("[ARMOR SERVER DEBUG] SUCCESS: Player", player.Name, "equipped", hotbarItem.itemName, "to", armorSlot)
     print("[ARMOR SERVER DEBUG] --- EquipArmor END ---")
+
+    InventoryServerSystem:RemoveItemByObject(player, hotbarItem.object)
+
     return true, "Successfully equipped armor"
 end
 
@@ -203,25 +211,31 @@ function ArmorServerSystem:UnequipArmor(player, armorSlot)
         return false, "Armor object is invalid"
     end
     
-    -- Calculate spawn position (in front of player)
-    local character = player.Character
-    if not character or not character:FindFirstChild("HumanoidRootPart") then
-        return false, "Player character not found"
+    -- Instead of dropping to world, store back into player's inventory
+
+    local success, slotOrMsg = InventoryServerSystem:AddItemToFirstEmptySlot(player, armorItem.object)
+
+    if not success then
+        -- If inventory full, fallback to world drop (maintain previous behaviour)
+        local character = player.Character
+        if character and character:FindFirstChild("HumanoidRootPart") then
+            local humanoidRootPart = character.HumanoidRootPart
+            local spawnPosition = humanoidRootPart.CFrame * CFrame.new(0, 0, -3)
+            armorItem.object.Parent = workspace
+            armorItem.object.CFrame = spawnPosition
+            armorItem.object.Anchored = false
+        else
+            armorItem.object.Parent = workspace
+            armorItem.object.CFrame = CFrame.new(0, 10, 0)
+            armorItem.object.Anchored = false
+        end
+        playerArmor[player][armorSlot] = nil
+        return true, "Inventory full - dropped to world"
     end
-    
-    local humanoidRootPart = character.HumanoidRootPart
-    local spawnPosition = humanoidRootPart.CFrame * CFrame.new(0, 0, -3) -- 3 studs in front
-    
-    -- Return armor to world
-    armorItem.object.Parent = workspace
-    armorItem.object.CFrame = spawnPosition
-    armorItem.object.Anchored = false
-    
-    -- Remove from armor inventory
+
+    -- Successfully placed back into inventory
     playerArmor[player][armorSlot] = nil
-    
-    print("Player", player.Name, "unequipped", armorItem.itemName, "from", armorSlot)
-    return true, "Successfully unequipped armor"
+    return true, "Returned to inventory slot " .. tostring(slotOrMsg)
 end
 
 function ArmorServerSystem:IsValidArmorSlot(armorSlot)

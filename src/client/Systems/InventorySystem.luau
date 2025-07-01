@@ -30,10 +30,10 @@ function InventorySystem:Initialize()
         elseif input.KeyCode == Enum.KeyCode.Q then
             self:HandleQKeyPress()
         else
-            -- Handle number key slot selection
             local slotNumber = self:GetSlotFromKeyCode(input.KeyCode)
             if slotNumber then
-                self:HandleSlotSelection(slotNumber)
+                -- Number key equip disabled (drag-and-drop only)
+                return
             end
         end
     end)
@@ -288,22 +288,13 @@ function InventorySystem:HandleSlotSelection(slotNumber)
 end
 
 function InventorySystem:GetEquippedItem()
-    print("[INVENTORY DEBUG] --- GetEquippedItem START ---")
-    print("[INVENTORY DEBUG] Current equipped slot:", equippedSlot)
-    print("[INVENTORY DEBUG] Player inventory state:")
-    for i = 1, 10 do
-        local item = playerInventory[i]
-        print("[INVENTORY DEBUG]   Slot", i, ":", item and item.itemName or "EMPTY")
-    end
+    -- Simplified logging
     
     -- Get currently equipped item for armor system integration
     if equippedSlot and playerInventory[equippedSlot] then
         local inventoryItem = playerInventory[equippedSlot]
-        print("[INVENTORY DEBUG] Found equipped item:", inventoryItem.itemName)
-        print("[INVENTORY DEBUG] Item object:", inventoryItem.object)
         
         local itemId = self:GetItemIdFromObject(inventoryItem.object)
-        print("[INVENTORY DEBUG] Calculated item ID:", itemId)
         
         local result = {
             itemName = inventoryItem.itemName,
@@ -312,12 +303,8 @@ function InventorySystem:GetEquippedItem()
             slot = equippedSlot
         }
         
-        print("[INVENTORY DEBUG] Returning equipped item result:", result)
-        print("[INVENTORY DEBUG] --- GetEquippedItem END ---")
         return result
     else
-        print("[INVENTORY DEBUG] No equipped item found")
-        print("[INVENTORY DEBUG] --- GetEquippedItem END ---")
         return nil
     end
 end
@@ -390,9 +377,14 @@ function InventorySystem:HandleArmorUnequipped(armorItem)
     playerInventory[targetSlot] = inventoryItem
     print("[INVENTORY DEBUG] Added armor to hotbar slot", targetSlot)
     
-    -- Auto-equip the returned armor
-    equippedSlot = targetSlot
-    print("[INVENTORY DEBUG] Auto-equipped returned armor in slot:", targetSlot)
+    -- Leave player hands empty; unequip on both client and server
+    equippedSlot = nil
+    print("[INVENTORY DEBUG] Returned armor stored, hands left empty")
+
+    -- Notify server to clear equipped slot (hands empty)
+    pcall(function()
+        RemoteEvents.InventoryRequest:InvokeServer("equip_slot", nil)
+    end)
     
     -- Update hotbar UI
     self:UpdateHotbarUI()
@@ -512,6 +504,19 @@ function InventorySystem:SwapSlots(slot1, slot2)
     
     print("=== SLOT SWAP DEBUG END ===")
     print("Final result - equipped slot:", equippedSlot)
+end
+
+function InventorySystem:EquipSlotDirect(slot)
+    -- Request equip slot to server
+    local success, result, message = pcall(function()
+        return RemoteEvents.InventoryRequest:InvokeServer("equip_slot", slot)
+    end)
+
+    if success and result then
+        self:EquipSlot(slot)
+    else
+        warn("EquipSlotDirect failed:", message)
+    end
 end
 
 return InventorySystem 

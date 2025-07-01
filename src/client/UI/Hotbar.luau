@@ -275,19 +275,45 @@ function Hotbar:CompleteDrag(targetSlot)
     local sourceSlot = dragState.draggedSlot
     print("[HOTBAR DEBUG] Source slot:", sourceSlot.slotNumber)
     
-    -- Only proceed if we're dropping on a different slot
-    if sourceSlot ~= targetSlot then
+    -- Swap only if a valid target slot was supplied and it's different from source
+    if targetSlot and sourceSlot ~= targetSlot then
         print("[HOTBAR DEBUG] Different slots - proceeding with swap")
         print("[HOTBAR DEBUG] Swapping slot", sourceSlot.slotNumber, "with slot", targetSlot.slotNumber)
         self:SwapSlots(sourceSlot.slotNumber, targetSlot.slotNumber)
         print("[HOTBAR DEBUG] Swap completed")
     else
-        print("[HOTBAR DEBUG] Same slot - no swap needed")
+        print("[HOTBAR DEBUG] No slot swap needed (target nil or same as source)")
     end
     
-    -- Clean up drag state
-    print("[HOTBAR DEBUG] Cleaning up drag state")
+    -- First clean up drag visuals so the preview frame no longer blocks hit-testing
     self:CleanupDrag()
+
+    -- Now detect if the mouse is over an armour slot
+    local mousePos = UserInputService:GetMouseLocation()
+    local guiObjects = playerGui:GetGuiObjectsAtPosition(mousePos.X, mousePos.Y)
+    local detectedArmorSlot
+    for _, gui in ipairs(guiObjects) do
+        -- Skip the hotbar preview frame if it somehow survived
+        if gui.Name ~= "DragPreview" then
+            local current = gui
+            while current do
+                local slotType = current:GetAttribute("ArmorSlotType")
+                if slotType then
+                    detectedArmorSlot = slotType
+                    break
+                end
+                current = current.Parent
+            end
+            if detectedArmorSlot then break end
+        end
+    end
+
+    if detectedArmorSlot and _G.ArmorSystem then
+        print("[HOTBAR DEBUG] Detected armour slot under cursor:", detectedArmorSlot)
+        _G.ArmorSystem:EquipFromInventorySlot(sourceSlot.slotNumber, detectedArmorSlot)
+    else
+        print("[HOTBAR DEBUG] No armour slot detected under cursor after drag")
+    end
     
     print("[HOTBAR DEBUG] --- CompleteDrag END ---")
 end
@@ -330,8 +356,8 @@ end
 -- Handle global mouse up to complete drag even if mouse leaves slot
 UserInputService.InputEnded:Connect(function(input)
     if input.UserInputType == Enum.UserInputType.MouseButton1 and dragState.isDragging then
-        -- Complete drag without a specific target (cancel drag)
-        Hotbar:CleanupDrag()
+        -- Complete drag without a specific hotbar target; will still attempt armor detection
+        Hotbar:CompleteDrag(nil)
     end
 end)
 

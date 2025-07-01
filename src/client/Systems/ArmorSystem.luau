@@ -78,7 +78,7 @@ function ArmorSystem:TryEquipArmorFromHotbar(armorSlot)
     print("[ARMOR DEBUG] Equipped hotbar item:", equippedItem and equippedItem.itemName or "NONE")
     
     if not equippedItem then
-        print("[ARMOR DEBUG] ERROR: No item equipped in hotbar")
+        -- Nothing equipped – cannot proceed
         return
     end
     
@@ -318,6 +318,17 @@ end
 
 function ArmorSystem:IsArmorMenuVisible()
     return ArmorMenu and ArmorMenu:IsVisible()
+end
+
+-- Equip directly from a specific inventory slot (used by drag-drop)
+function ArmorSystem:EquipFromInventorySlot(slotIndex, armorSlot)
+    if not _G.InventorySystem then return end
+
+    -- Equip the slot first (client + server)
+    _G.InventorySystem:EquipSlotDirect(slotIndex)
+
+    -- Now attempt normal equip flow
+    self:TryEquipArmorFromHotbar(armorSlot)
 end
 
 return ArmorSystem 

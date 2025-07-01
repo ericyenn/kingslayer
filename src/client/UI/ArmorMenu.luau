@@ -107,6 +107,7 @@ function ArmorMenu:CreateArmorSlot(slotIndex, armorSlotData)
     -- Slot frame
     local slotFrame = Instance.new("Frame")
     slotFrame.Name = "ArmorSlot" .. armorSlotData.slot
+    slotFrame:SetAttribute("ArmorSlotType", armorSlotData.slot)
     slotFrame.Size = UDim2.new(0, SLOT_SIZE, 0, SLOT_SIZE)
     slotFrame.Position = UDim2.new(0, xOffset, 0, yOffset)
     slotFrame.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
@@ -176,6 +177,7 @@ function ArmorMenu:CreateArmorSlot(slotIndex, armorSlotData)
     clickDetector.Position = UDim2.new(0, 0, 0, 0)
     clickDetector.BackgroundTransparency = 1
     clickDetector.Text = ""
+    clickDetector:SetAttribute("ArmorSlotType", armorSlotData.slot)
     clickDetector.Parent = slotFrame
     
     -- Store slot reference

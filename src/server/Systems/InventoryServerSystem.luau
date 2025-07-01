@@ -174,6 +174,17 @@ function InventoryServerSystem:DropFromInventory(player, slot)
     object.Anchored = false
     
     -- Remove from inventory
+    -- Clear equipped slot tracking if needed
+    if playerEquippedSlots[player] == slot then
+        playerEquippedSlots[player] = nil
+    end
+
+    -- Destroy any active Tool instance held by the character
+    if inventoryItem.activeTool and inventoryItem.activeTool.Parent then
+        inventoryItem.activeTool:Destroy()
+        inventoryItem.activeTool = nil
+    end
+
     playerInventories[player][slot] = nil
     
     print("Player", player.Name, "dropped", object.Name, "from slot", slot)
@@ -434,6 +445,66 @@ function InventoryServerSystem:SwapSlots(player, slot1, slot2)
     print("=== SERVER SWAP SLOTS DEBUG END ===")
     
     return true, "Slots swapped successfully"
+end
+
+-- Public helper: remove an inventory item by its instance (object)
+function InventoryServerSystem:RemoveItemByObject(player, object)
+    if not playerInventories[player] or not object then return end
+
+    for slot, inventoryItem in pairs(playerInventories[player]) do
+        if inventoryItem and inventoryItem.object == object then
+            -- Clear equipped slot tracking if needed
+            if playerEquippedSlots[player] == slot then
+                playerEquippedSlots[player] = nil
+            end
+
+            -- Destroy any active Tool instance held by the character
+            if inventoryItem.activeTool and inventoryItem.activeTool.Parent then
+                inventoryItem.activeTool:Destroy()
+                inventoryItem.activeTool = nil
+            end
+
+            playerInventories[player][slot] = nil
+            break
+        end
+    end
+end
+
+-- Add an item directly into the first available slot (used by ArmorServerSystem when unequipping)
+function InventoryServerSystem:AddItemToFirstEmptySlot(player, object)
+    if not playerInventories[player] or not object then
+        return false, "Invalid player or object"
+    end
+
+    -- Find first empty slot
+    local emptySlot = nil
+    for i = 1, 10 do
+        if not playerInventories[player][i] then
+            emptySlot = i
+            break
+        end
+    end
+
+    if not emptySlot then
+        return false, "Inventory full"
+    end
+
+    -- Build inventory item structure (re-using GetItemIcon helper)
+    local itemInfo = {
+        object = object,
+        itemName = object.Name,
+        originalCFrame = object.CFrame,
+        originalParent = object.Parent,
+        icon = self:GetItemIcon(object)
+    }
+
+    playerInventories[player][emptySlot] = itemInfo
+
+    -- Ensure object is stored safely (anchor + ReplicatedStorage)
+    object.Parent = ReplicatedStorage
+    object.Anchored = true
+
+    return true, emptySlot
 end
 
 return InventoryServerSystem 

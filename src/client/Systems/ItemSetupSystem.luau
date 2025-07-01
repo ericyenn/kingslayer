@@ -1,4 +1,4 @@
--- Client-side item setup system - adds components to spawned items
+ -- Client-side item setup system - adds components to spawned items
 local ItemSetupSystem = {}
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
