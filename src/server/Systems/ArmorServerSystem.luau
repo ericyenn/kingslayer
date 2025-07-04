@@ -189,7 +189,12 @@ function ArmorServerSystem:EquipArmor(player, armorSlot, hotbarItem)
     print("[ARMOR SERVER DEBUG] SUCCESS: Player", player.Name, "equipped", hotbarItem.itemName, "to", armorSlot)
     print("[ARMOR SERVER DEBUG] --- EquipArmor END ---")
 
-    InventoryServerSystem:RemoveItemByObject(player, hotbarItem.object)
+    -- Schedule inventory cleanup after response is sent to avoid RemoteFunction deadlock
+    spawn(function()
+        wait(0.1) -- Small delay to ensure response is sent first
+        InventoryServerSystem:RemoveItemByObject(player, hotbarItem.object)
+        print("[ARMOR SERVER DEBUG] Inventory cleanup completed for", hotbarItem.itemName)
+    end)
 
     return true, "Successfully equipped armor"
 end

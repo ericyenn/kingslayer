@@ -391,11 +391,14 @@ end
 
 function InventoryServerSystem:AddToolScript(tool)
     -- Clone the pre-made tool handler script
+    print("DEBUG: Looking for ToolHandler script template...")
     local toolHandlerTemplate = ReplicatedStorage:FindFirstChild("Shared"):FindFirstChild("ToolHandler")
     
     if toolHandlerTemplate then
+        print("DEBUG: Found ToolHandler template:", toolHandlerTemplate:GetFullName())
         local toolScript = toolHandlerTemplate:Clone()
         toolScript.Parent = tool
+        print("DEBUG: Successfully cloned ToolHandler script to tool:", tool.Name)
     else
         -- Fallback: just add a simple identifier
         local toolId = Instance.new("StringValue")
@@ -403,6 +406,10 @@ function InventoryServerSystem:AddToolScript(tool)
         toolId.Value = tool.Name
         toolId.Parent = tool
         warn("Tool script template not found - tools may not function properly")
+        print("DEBUG: ReplicatedStorage.Shared contents:")
+        for _, child in pairs(ReplicatedStorage.Shared:GetChildren()) do
+            print("  -", child.Name, child.ClassName)
+        end
     end
 end
 

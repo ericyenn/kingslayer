@@ -32,8 +32,7 @@ function InventorySystem:Initialize()
         else
             local slotNumber = self:GetSlotFromKeyCode(input.KeyCode)
             if slotNumber then
-                -- Number key equip disabled (drag-and-drop only)
-                return
+                self:HandleSlotSelection(slotNumber)
             end
         end
     end)
