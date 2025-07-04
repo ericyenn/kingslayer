@@ -137,12 +137,21 @@ function ArmorSystem:RequestArmorEquip(armorSlot, hotbarItem)
     print("[ARMOR DEBUG] Requesting equip for slot:", armorSlot)
     print("[ARMOR DEBUG] Item to equip:", hotbarItem.itemName)
     
-    print("[ARMOR DEBUG] Calling RemoteEvents.ArmorRequest:InvokeServer...")
-    
-    -- Call the server directly without pcall to see if that's the issue
-    local serverSuccess, serverMessage = RemoteEvents.ArmorRequest:InvokeServer("equip_armor", armorSlot, hotbarItem)
+    local success, result, message = pcall(function()
+        print("[ARMOR DEBUG] Calling RemoteEvents.ArmorRequest:InvokeServer...")
+        return RemoteEvents.ArmorRequest:InvokeServer("equip_armor", armorSlot, hotbarItem)
+    end)
     
     print("[ARMOR DEBUG] Server call completed")
+    print("[ARMOR DEBUG] Call success:", success)
+    
+    if not success then
+        print("[ARMOR DEBUG] ERROR: ArmorRequest call failed:", result)
+        warn("ArmorRequest call failed:", result)
+        return
+    end
+    
+    local serverSuccess, serverMessage = result, message
     print("[ARMOR DEBUG] Server response success:", serverSuccess)
     print("[ARMOR DEBUG] Server response message:", serverMessage)
     
@@ -178,12 +187,21 @@ function ArmorSystem:RequestArmorUnequip(armorSlot)
     print("[ARMOR DEBUG] --- RequestArmorUnequip START ---")
     print("[ARMOR DEBUG] Requesting unequip for slot:", armorSlot)
     
-    print("[ARMOR DEBUG] Calling RemoteEvents.ArmorRequest:InvokeServer for unequip...")
-    
-    -- Call the server directly without pcall to see if that's the issue
-    local serverSuccess, serverMessage = RemoteEvents.ArmorRequest:InvokeServer("unequip_armor", armorSlot)
+    local success, result, message = pcall(function()
+        print("[ARMOR DEBUG] Calling RemoteEvents.ArmorRequest:InvokeServer for unequip...")
+        return RemoteEvents.ArmorRequest:InvokeServer("unequip_armor", armorSlot)
+    end)
     
     print("[ARMOR DEBUG] Server unequip call completed")
+    print("[ARMOR DEBUG] Call success:", success)
+    
+    if not success then
+        print("[ARMOR DEBUG] ERROR: ArmorRequest unequip call failed:", result)
+        warn("ArmorRequest call failed:", result)
+        return
+    end
+    
+    local serverSuccess, serverMessage = result, message
     print("[ARMOR DEBUG] Server unequip response success:", serverSuccess)
     print("[ARMOR DEBUG] Server unequip response message:", serverMessage)
     
@@ -281,17 +299,8 @@ function ArmorSystem:TryEquipFromUse(heldItem)
     -- Check if the target armor slot is already occupied
     if playerArmor[armorSlot] then
         print("[ARMOR DEBUG] Armor slot", armorSlot, "is already occupied by", playerArmor[armorSlot].itemName)
-        print("[ARMOR DEBUG] Initiating armor swap...")
-        
-        -- First unequip the current armor
-        local currentArmor = playerArmor[armorSlot]
-        self:RequestArmorUnequip(armorSlot)
-        
-        -- Wait a brief moment for the unequip to complete, then equip the new armor
-        wait(0.1)
-        self:RequestArmorEquip(armorSlot, heldItem)
-        
-        print("[ARMOR DEBUG] Armor swap completed: replaced", currentArmor.itemName, "with", heldItem.itemName)
+        -- Optionally, open the armor menu here to allow manual swapping
+        self:Show()
         return
     end
 
@@ -329,18 +338,6 @@ function ArmorSystem:Use(itemDef, player, target)
 	else
 		print("ArmorSystem: No target was hit.")
 	end
-	
-	-- Get the currently equipped item from the hotbar
-	local equippedItem = self:GetEquippedHotbarItem()
-	if not equippedItem then
-		print("ArmorSystem: No equipped item found to equip as armor")
-		return
-	end
-	
-	print("ArmorSystem: Attempting to equip armor:", equippedItem.itemName)
-	
-	-- Use the existing TryEquipFromUse function to handle the armor equipping
-	self:TryEquipFromUse(equippedItem)
 end
 
 return ArmorSystem 
