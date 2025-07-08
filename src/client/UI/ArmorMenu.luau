@@ -193,21 +193,10 @@ function ArmorMenu:CreateArmorSlot(slotIndex, armorSlotData)
     
     -- Connect click event (will be handled by ArmorSystem)
     clickDetector.MouseButton1Click:Connect(function()
-        print("[ARMOR MENU DEBUG] ========== ARMOR SLOT CLICKED ==========")
-        print("[ARMOR MENU DEBUG] Clicked armor slot:", armorSlotData.slot)
-        print("[ARMOR MENU DEBUG] Slot data:", armorSlotData)
-        print("[ARMOR MENU DEBUG] ArmorSystem exists:", _G.ArmorSystem ~= nil)
-        
         -- Signal to ArmorSystem that this slot was clicked
         if _G.ArmorSystem then
-            print("[ARMOR MENU DEBUG] Calling ArmorSystem:HandleSlotClick")
             _G.ArmorSystem:HandleSlotClick(armorSlotData.slot)
-            print("[ARMOR MENU DEBUG] ArmorSystem:HandleSlotClick completed")
-        else
-            print("[ARMOR MENU DEBUG] ERROR: ArmorSystem not found in _G")
         end
-        
-        print("[ARMOR MENU DEBUG] =============================================")
     end)
 end
 

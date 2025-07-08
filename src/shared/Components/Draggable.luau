@@ -95,7 +95,7 @@ function Draggable:StopDrag(item)
         self.attachment = nil
     end
     
-    print("Stopped dragging:", item.Name)
+    print("Stopped dragging:", item and item.Name or "unknown")
 end
 
 -- Check if currently being dragged
@@ -106,8 +106,28 @@ end
 -- Clean up (called when component is removed)
 function Draggable:Destroy()
     if self.isDragging then
-        self:StopDrag()
+        self.isDragging = false
+        
+        -- Clean up connections
+        if self.dragConnection then
+            self.dragConnection:Disconnect()
+        end
+        
+        -- Clean up constraints
+        if self.alignPosition then
+            self.alignPosition:Destroy()
+        end
+        
+        if self.attachment then
+            self.attachment:Destroy()
+        end
     end
+    
+    -- Clear all references
+    self.dragConnection = nil
+    self.alignPosition = nil
+    self.attachment = nil
+    self.isDragging = false
 end
 
 return Draggable 

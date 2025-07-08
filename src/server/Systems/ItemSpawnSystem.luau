@@ -8,17 +8,39 @@ local ItemDefinitions = require(ReplicatedStorage.Shared.ItemDefinitions)
 local Constants = require(ReplicatedStorage.Shared.Constants)
 
 function ItemSpawnSystem:Initialize()
-    -- Spawn existing test items (tools)
-    self:SpawnItem("hammer", Vector3.new(0, 10, 0))
-    self:SpawnItem("wrench", Vector3.new(5, 10, 0))
-    self:SpawnItem("screwdriver", Vector3.new(-5, 10, 0))
+    -- Only spawn test items if there are very few items in the world
+    -- This prevents accumulation while maintaining functionality for new servers
+    local existingItems = CollectionService:GetTagged(Constants.TAGS.DRAGGABLE_ITEM)
+    local itemsInWorkspace = 0
     
-    -- Spawn new armor items for testing
-    self:SpawnItem("helmet", Vector3.new(10, 10, 0))
-    self:SpawnItem("chestplate", Vector3.new(15, 10, 0))
-    self:SpawnItem("boots", Vector3.new(20, 10, 0))
+    for _, item in ipairs(existingItems) do
+        if item.Parent == workspace then
+            itemsInWorkspace = itemsInWorkspace + 1
+        end
+    end
     
-    print("Item spawn system initialized - spawned test items and armor")
+    -- Only spawn if less than 10 items exist in workspace (fresh or nearly empty world)
+    if itemsInWorkspace < 10 then
+        print("Spawning test items - found only", itemsInWorkspace, "items in workspace")
+        
+        -- Spawn test items with your current item set
+        self:SpawnItem("stick", Vector3.new(0, 10, 0))
+        self:SpawnItem("cutlass", Vector3.new(5, 10, 0))
+        
+        -- Spawn armor for testing
+        self:SpawnItem("chestplate", Vector3.new(10, 10, 0))
+        
+        -- Spawn functional items for testing
+        self:SpawnItem("healing_essence", Vector3.new(15, 10, 0))
+        
+        -- Spawn trading materials for testing
+        self:SpawnItem("wood", Vector3.new(-5, 10, 0))
+        self:SpawnItem("stone", Vector3.new(-10, 10, 0))
+        
+        print("Item spawn system initialized - spawned current item set")
+    else
+        print("Item spawn system initialized - skipped spawning test items (", itemsInWorkspace, "items already exist)")
+    end
 end
 
 function ItemSpawnSystem:SpawnItem(itemId, position)
@@ -28,28 +50,81 @@ function ItemSpawnSystem:SpawnItem(itemId, position)
         return nil
     end
     
-    -- Create the physical item (for now, just a simple part)
-    -- In a real game, you'd load the actual model
-    local item = Instance.new("Part")
-    item.Name = itemDefinition.name
-    item.Size = Vector3.new(2, 1, 0.5) -- Default size
-    item.Position = position
-    item.BrickColor = BrickColor.Random() -- Random color for testing
-    item.TopSurface = Enum.SurfaceType.Smooth
-    item.BottomSurface = Enum.SurfaceType.Smooth
+    local item = nil
     
-    -- CRITICAL: Make sure the part is unanchored so it can be moved by physics
-    item.Anchored = false
+    -- Try to load custom model first
+    if itemDefinition.model then
+        local modelsFolder = ReplicatedStorage:FindFirstChild("Models")
+        if modelsFolder then
+            local modelTemplate = modelsFolder:FindFirstChild(itemDefinition.model)
+            if modelTemplate then
+                -- Clone the custom model
+                item = modelTemplate:Clone()
+                item.Name = itemDefinition.name
+                print("Loaded custom model:", itemDefinition.model, "for", itemDefinition.name)
+            else
+                warn("Model not found in ReplicatedStorage/Models/:", itemDefinition.model)
+            end
+        else
+            warn("Models folder not found in ReplicatedStorage")
+        end
+    end
     
-    -- Add some mass so it feels substantial
-    item.Material = Enum.Material.Metal
+    -- Fallback to basic part if no model found
+    if not item then
+        print("Using fallback basic part for:", itemDefinition.name)
+        item = Instance.new("Part")
+        item.Name = itemDefinition.name
+        item.Size = Vector3.new(2, 1, 0.5) -- Default size
+        item.BrickColor = BrickColor.Random() -- Random color for testing
+        item.TopSurface = Enum.SurfaceType.Smooth
+        item.BottomSurface = Enum.SurfaceType.Smooth
+        item.Material = Enum.Material.Metal
+    end
+    
+    -- Ensure item has a primary part for positioning
+    local primaryPart = item
+    if item:IsA("Model") then
+        if not item.PrimaryPart then
+            -- Find the largest part to use as primary part
+            local largestPart = nil
+            local largestVolume = 0
+            for _, part in pairs(item:GetChildren()) do
+                if part:IsA("BasePart") then
+                    local volume = part.Size.X * part.Size.Y * part.Size.Z
+                    if volume > largestVolume then
+                        largestVolume = volume
+                        largestPart = part
+                    end
+                end
+            end
+            if largestPart then
+                item.PrimaryPart = largestPart
+            end
+        end
+        primaryPart = item.PrimaryPart
+    end
+    
+    -- Position the item
+    if primaryPart then
+        if item:IsA("Model") then
+            item:SetPrimaryPartCFrame(CFrame.new(position))
+        else
+            primaryPart.Position = position
+        end
+        
+        -- CRITICAL: Make sure the item can be moved by physics
+        primaryPart.Anchored = false
+    else
+        warn("Could not position item - no primary part found:", itemDefinition.name)
+    end
     
     item.Parent = workspace
     
     -- Tag the item for client-side component setup
     CollectionService:AddTag(item, Constants.TAGS.DRAGGABLE_ITEM)
     
-    print("Spawned unanchored item:", itemDefinition.name, "at", position)
+    print("Spawned item:", itemDefinition.name, "at", position)
     return item
 end
 

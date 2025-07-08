@@ -27,6 +27,9 @@ local dragState = {
     originalPosition = nil
 }
 
+-- ENHANCED: Track all connections for cleanup
+local globalConnections = {}
+
 function Hotbar:Initialize()
     self:CreateHotbarUI()
     self:SetupDragAndDrop()
@@ -161,17 +164,10 @@ function Hotbar:ConnectSlotDragEvents(slot)
     
     -- Mouse button down - start potential drag
     dragButton.MouseButton1Down:Connect(function()
-        print("[HOTBAR DEBUG] Mouse button down on slot", slot.slotNumber)
-        print("[HOTBAR DEBUG] Slot is empty:", slot.isEmpty)
-        
         local canDrag = self:CanDragSlots()
-        print("[HOTBAR DEBUG] Can drag slots:", canDrag)
         
         if canDrag and not slot.isEmpty then
-            print("[HOTBAR DEBUG] Starting drag for slot", slot.slotNumber)
             self:StartDrag(slot)
-        else
-            print("[HOTBAR DEBUG] Cannot start drag - canDrag:", canDrag, "isEmpty:", slot.isEmpty)
         end
     end)
     
@@ -199,11 +195,7 @@ end
 
 function Hotbar:CanDragSlots()
     -- Only allow dragging when armor menu is visible
-    local canDrag = _G.ArmorSystem and _G.ArmorSystem:IsArmorMenuVisible()
-    print("[HOTBAR DEBUG] CanDragSlots check - ArmorSystem exists:", _G.ArmorSystem ~= nil)
-    print("[HOTBAR DEBUG] CanDragSlots check - Armor menu visible:", _G.ArmorSystem and _G.ArmorSystem:IsArmorMenuVisible())
-    print("[HOTBAR DEBUG] CanDragSlots result:", canDrag)
-    return canDrag
+    return _G.ArmorSystem and _G.ArmorSystem:IsArmorMenuVisible()
 end
 
 function Hotbar:StartDrag(slot)
@@ -237,12 +229,23 @@ function Hotbar:CreateDragPreview(slot)
     dragState.dragPreview.BackgroundTransparency = 0.5 -- Semi-transparent
     dragState.dragPreview.Parent = screenGui
     
+    -- Get GuiService for window offset calculation
+    local GuiService = game:GetService("GuiService")
+    
     -- Update preview position with mouse movement
     local connection
     connection = UserInputService.InputChanged:Connect(function(input)
         if input.UserInputType == Enum.UserInputType.MouseMovement and dragState.isDragging then
+            -- Get screen coordinates and convert to game window coordinates
             local mousePos = UserInputService:GetMouseLocation()
-            dragState.dragPreview.Position = UDim2.new(0, mousePos.X - SLOT_SIZE/2, 0, mousePos.Y - SLOT_SIZE/2)
+            local guiInset = GuiService:GetGuiInset()
+            
+            -- Adjust for window offset (title bar, etc.)
+            local gameWindowX = mousePos.X - guiInset.X
+            local gameWindowY = mousePos.Y - guiInset.Y
+            
+            -- Position drag preview centered on cursor
+            dragState.dragPreview.Position = UDim2.new(0, gameWindowX - SLOT_SIZE/2, 0, gameWindowY - SLOT_SIZE/2)
         end
     end)
     
@@ -261,36 +264,84 @@ function Hotbar:HighlightDropTarget(slot, highlight)
     end
 end
 
-function Hotbar:CompleteDrag(targetSlot)
-    print("[HOTBAR DEBUG] --- CompleteDrag START ---")
-    print("[HOTBAR DEBUG] Target slot:", targetSlot and targetSlot.slotNumber or "NIL")
-    print("[HOTBAR DEBUG] Drag state - isDragging:", dragState.isDragging)
-    print("[HOTBAR DEBUG] Drag state - draggedSlot:", dragState.draggedSlot and dragState.draggedSlot.slotNumber or "NIL")
+function Hotbar:DetectSlotAtMousePosition()
+    -- Helper method to detect which hotbar slot the mouse is over
+    local GuiService = game:GetService("GuiService")
+    local mousePos = UserInputService:GetMouseLocation()
+    local guiInset = GuiService:GetGuiInset()
     
+    -- Convert to game window coordinates
+    local gameWindowX = mousePos.X - guiInset.X
+    local gameWindowY = mousePos.Y - guiInset.Y
+    
+    local guiObjects = playerGui:GetGuiObjectsAtPosition(gameWindowX, gameWindowY)
+    
+    -- Look for hotbar slot elements
+    for _, gui in ipairs(guiObjects) do
+        -- Skip the drag preview frame
+        if gui.Name ~= "DragPreview" then
+            local current = gui
+            while current do
+                -- Check if this is a hotbar slot frame
+                if current.Name and string.match(current.Name, "^Slot%d+$") then
+                    -- Extract slot number from name (e.g., "Slot2" -> 2)
+                    local slotNumber = tonumber(string.match(current.Name, "%d+"))
+                    if slotNumber and slots[slotNumber] then
+                        print("[HOTBAR DEBUG] Detected hotbar slot at mouse position:", slotNumber)
+                        return slots[slotNumber]
+                    end
+                end
+                
+                -- Check if this is a drag button inside a slot
+                if current.Name == "DragButton" and current.Parent then
+                    local slotFrame = current.Parent
+                    if slotFrame.Name and string.match(slotFrame.Name, "^Slot%d+$") then
+                        local slotNumber = tonumber(string.match(slotFrame.Name, "%d+"))
+                        if slotNumber and slots[slotNumber] then
+                            print("[HOTBAR DEBUG] Detected hotbar slot via drag button at mouse position:", slotNumber)
+                            return slots[slotNumber]
+                        end
+                    end
+                end
+                
+                current = current.Parent
+            end
+        end
+    end
+    
+    return nil
+end
+
+function Hotbar:CompleteDrag(targetSlot)
     if not dragState.isDragging or not dragState.draggedSlot then
-        print("[HOTBAR DEBUG] ERROR: Invalid drag state, aborting")
         return
     end
     
     local sourceSlot = dragState.draggedSlot
-    print("[HOTBAR DEBUG] Source slot:", sourceSlot.slotNumber)
     
-    -- Swap only if a valid target slot was supplied and it's different from source
+    -- If no target slot provided, try to detect one at mouse position
+    if not targetSlot then
+        targetSlot = self:DetectSlotAtMousePosition()
+    end
+    
+    -- Swap only if a valid target slot was found and it's different from source
     if targetSlot and sourceSlot ~= targetSlot then
-        print("[HOTBAR DEBUG] Different slots - proceeding with swap")
-        print("[HOTBAR DEBUG] Swapping slot", sourceSlot.slotNumber, "with slot", targetSlot.slotNumber)
         self:SwapSlots(sourceSlot.slotNumber, targetSlot.slotNumber)
-        print("[HOTBAR DEBUG] Swap completed")
-    else
-        print("[HOTBAR DEBUG] No slot swap needed (target nil or same as source)")
     end
     
     -- First clean up drag visuals so the preview frame no longer blocks hit-testing
     self:CleanupDrag()
 
     -- Now detect if the mouse is over an armour slot
+    local GuiService = game:GetService("GuiService")
     local mousePos = UserInputService:GetMouseLocation()
-    local guiObjects = playerGui:GetGuiObjectsAtPosition(mousePos.X, mousePos.Y)
+    local guiInset = GuiService:GetGuiInset()
+    
+    -- Convert to game window coordinates
+    local gameWindowX = mousePos.X - guiInset.X
+    local gameWindowY = mousePos.Y - guiInset.Y
+    
+    local guiObjects = playerGui:GetGuiObjectsAtPosition(gameWindowX, gameWindowY)
     local detectedArmorSlot
     for _, gui in ipairs(guiObjects) do
         -- Skip the hotbar preview frame if it somehow survived
@@ -309,13 +360,8 @@ function Hotbar:CompleteDrag(targetSlot)
     end
 
     if detectedArmorSlot and _G.ArmorSystem then
-        print("[HOTBAR DEBUG] Detected armour slot under cursor:", detectedArmorSlot)
         _G.ArmorSystem:EquipFromInventorySlot(sourceSlot.slotNumber, detectedArmorSlot)
-    else
-        print("[HOTBAR DEBUG] No armour slot detected under cursor after drag")
     end
-    
-    print("[HOTBAR DEBUG] --- CompleteDrag END ---")
 end
 
 function Hotbar:SwapSlots(slot1, slot2)
@@ -349,12 +395,10 @@ function Hotbar:CleanupDrag()
         local equippedSlot = _G.InventorySystem:GetEquippedSlot()
         self:UpdateDisplay(inventory, equippedSlot)
     end
-    
-    print("Drag operation completed")
 end
 
--- Handle global mouse up to complete drag even if mouse leaves slot
-UserInputService.InputEnded:Connect(function(input)
+-- ENHANCED: Handle global mouse up to complete drag even if mouse leaves slot (with connection tracking)
+globalConnections.globalMouseUp = UserInputService.InputEnded:Connect(function(input)
     if input.UserInputType == Enum.UserInputType.MouseButton1 and dragState.isDragging then
         -- Complete drag without a specific hotbar target; will still attempt armor detection
         Hotbar:CompleteDrag(nil)
@@ -415,6 +459,42 @@ end
 
 function Hotbar:GetSlotCount()
     return SLOT_COUNT
+end
+
+-- ENHANCED: Add cleanup method for connection management
+function Hotbar:Cleanup()
+    -- Clean up global connections
+    for connectionName, connection in pairs(globalConnections) do
+        if connection then
+            connection:Disconnect()
+        end
+    end
+    globalConnections = {}
+    
+    -- Clean up drag state
+    if dragState.previewConnection then
+        dragState.previewConnection:Disconnect()
+        dragState.previewConnection = nil
+    end
+    
+    if dragState.dragPreview then
+        dragState.dragPreview:Destroy()
+        dragState.dragPreview = nil
+    end
+    
+    -- Clear drag state
+    dragState.isDragging = false
+    dragState.draggedSlot = nil
+    dragState.originalPosition = nil
+    
+    -- Clean up UI
+    if screenGui then
+        screenGui:Destroy()
+        screenGui = nil
+    end
+    
+    -- Clear slots
+    slots = {}
 end
 
 return Hotbar 

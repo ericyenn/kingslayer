@@ -11,11 +11,8 @@ function DragServerSystem:Initialize()
     -- Wait for and get remote events
     local RemoteEvents = require(ReplicatedStorage.Shared.RemoteEvents)
     
-    print("Connecting to DragRequest RemoteFunction...") -- Debug
-    
     -- Handle drag requests from clients
     RemoteEvents.DragRequest.OnServerInvoke = function(player, action, object)
-        print("RemoteFunction invoked by", player.Name) -- Debug
         return self:HandleDragRequest(player, action, object)
     end
     
@@ -28,10 +25,7 @@ function DragServerSystem:Initialize()
 end
 
 function DragServerSystem:HandleDragRequest(player, action, object)
-    print("Server received drag request from", player.Name, "Action:", action, "Object:", object and object.Name or "nil") -- Debug
-    
     if not object or not object.Parent then
-        print("Server rejecting: Invalid object") -- Debug
         return false, "Invalid object"
     end
     
@@ -40,7 +34,6 @@ function DragServerSystem:HandleDragRequest(player, action, object)
     elseif action == "drop" then
         return self:HandleDrop(player, object)
     else
-        print("Server rejecting: Invalid action:", action) -- Debug
         return false, "Invalid action"
     end
 end

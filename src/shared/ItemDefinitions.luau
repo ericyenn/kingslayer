@@ -1,6 +1,7 @@
 -- Item definitions with component configurations
 local ItemDefinitions = {}
 local Categories = require(script.Parent.ItemCategory)
+local ActionConstants = require(script.Parent.ActionConstants)
 local Color3 = Color3 -- Assume Color3 is globally available or imported if necessary
 
 -- Helper function for deep merging tables
@@ -20,38 +21,45 @@ local function mergeTables(t1, t2)
 end
 
 ItemDefinitions.items = {
-    hammer = {
-        name = "Hammer",
-        description = "A sturdy tool for construction and repairs. Perfect for driving nails and breaking things.",
-        model = "HammerModel", -- Reference to model in ReplicatedStorage
+    -- TOOLS - All use generic attack action with different damage
+    stick = {
+        name = "Stick",
+        description = "A simple wooden stick. Basic weapon for combat.",
+        model = "StickModel",
         category = Categories.Tool,
-        mouseDownAction = "hammer_action",
+        actionType = ActionConstants.Tool.ATTACK,
+        actionData = {
+            damage = 5,
+            chargeMultiplier = 2.0, -- Charged attack does 2x damage (10 total)
+            criticalMultiplier = 3.0 -- Critical attack does 3x damage (15 total)
+        },
         components = {
-            -- Draggable, Hoverable, Inventoryable components will be merged from defaults
-            -- Only specify unique overrides here
             Draggable = {
-                force = 16000, -- Override default force
-                maxDistance = 50, -- Override default maxDistance
-                dampening = 0.8 -- Override default dampening
+                force = 8000,
+                maxDistance = 35,
+                dampening = 0.6
             },
             Hoverable = {
-                displayName = "Hammer",
-                description = "A sturdy tool for construction and repairs. Perfect for driving nails and breaking things."
-                -- highlightColor will come from default
+                displayName = "Stick",
+                description = "A simple wooden stick. Basic weapon for combat."
             },
             Inventoryable = {
-                -- category field is now at top-level, not in Inventoryable component
-                inventoryIcon = "🔨"
+                inventoryIcon = "🪵"
             }
         }
     },
     
-    wrench = {
-        name = "Wrench",
-        description = "An adjustable wrench for mechanical work. Essential for any toolkit.",
-        model = "WrenchModel",
+    cutlass = {
+        name = "Cutlass",
+        description = "A sharp curved sword. Effective weapon for combat.",
+        model = "CutlassModel",
         category = Categories.Tool,
-        mouseDownAction = "wrench_action",
+        actionType = ActionConstants.Tool.ATTACK,
+        actionData = {
+            damage = 15,
+            chargeMultiplier = 2.0, -- Charged attack does 2x damage (30 total)
+            criticalMultiplier = 3.0 -- Critical attack does 3x damage (45 total)
+        },
         components = {
             Draggable = {
                 force = 12000,
@@ -59,69 +67,23 @@ ItemDefinitions.items = {
                 dampening = 0.7
             },
             Hoverable = {
-                displayName = "Wrench",
-                description = "An adjustable wrench for mechanical work. Essential for any toolkit."
+                displayName = "Cutlass",
+                description = "A sharp curved sword. Effective weapon for combat."
             },
             Inventoryable = {
-                inventoryIcon = "🔧"
+                inventoryIcon = "⚔️"
             }
         }
     },
     
-    screwdriver = {
-        name = "Screwdriver",
-        description = "A precision tool for screws and small fasteners. Handle with care.",
-        model = "ScrewdriverModel",
-        category = Categories.Tool,
-        mouseDownAction = "screwdriver_action",
-        components = {
-            Draggable = {
-                force = 8000,
-                maxDistance = 40,
-                dampening = 0.6
-            },
-            Hoverable = {
-                displayName = "Screwdriver",
-                description = "A precision tool for screws and small fasteners. Handle with care."
-            },
-            Inventoryable = {
-                inventoryIcon = "🪛"
-            }
-        }
-    },
-    
-    -- Armor Items
-    helmet = {
-        name = "Helmet",
-        description = "Protective headgear that shields your head from damage.",
-        model = "HelmetModel",
-        category = Categories.Armor,
-        armorSlot = "helmet",
-        mouseDownAction = "armor_helmet_action",
-        components = {
-            Draggable = {
-                force = 10000,
-                maxDistance = 40,
-                dampening = 0.7
-            },
-            Hoverable = {
-                displayName = "Helmet",
-                description = "Protective headgear that shields your head from damage."
-                -- highlightColor will come from default
-            },
-            Inventoryable = {
-                inventoryIcon = "⛑️"
-            }
-        }
-    },
-    
+    -- ARMOR - No click functionality, gives health when equipped
     chestplate = {
         name = "Chestplate",
-        description = "Heavy armor that protects your torso from attacks.",
+        description = "Heavy armor that protects your torso and provides health.",
         model = "ChestplateModel",
         category = Categories.Armor,
         armorSlot = "chestplate",
-        mouseDownAction = "armor_chestplate_action",
+        -- No actionType - armor has no click functionality
         components = {
             Draggable = {
                 force = 14000,
@@ -130,7 +92,7 @@ ItemDefinitions.items = {
             },
             Hoverable = {
                 displayName = "Chestplate",
-                description = "Heavy armor that protects your torso from attacks.",
+                description = "Heavy armor that protects your torso and provides health.",
                 highlightColor = Color3.fromRGB(255, 150, 150)
             },
             Inventoryable = {
@@ -143,13 +105,68 @@ ItemDefinitions.items = {
         }
     },
     
-    boots = {
-        name = "Boots",
-        description = "Sturdy footwear that protects your feet and improves mobility.",
-        model = "BootsModel",
-        category = Categories.Armor,
-        armorSlot = "boots",
-        mouseDownAction = "armor_boots_action",
+    -- FUNCTIONAL ITEMS - Placeholder for future customization
+    healing_essence = {
+        name = "Healing Essence",
+        description = "A magical essence with healing properties. Use to restore health.",
+        model = "HealingEssenceModel",
+        category = Categories.Functional,
+        actionType = ActionConstants.Functional.HEALING_ESSENCE,
+        actionData = {
+            -- Placeholder data - you can customize this later
+        },
+        components = {
+            Draggable = {
+                force = 6000,
+                maxDistance = 30,
+                dampening = 0.5
+            },
+            Hoverable = {
+                displayName = "Healing Essence",
+                description = "A magical essence with healing properties. Use to restore health.",
+                highlightColor = Color3.fromRGB(34, 139, 34)
+            },
+            Inventoryable = {
+                stackable = true,
+                maxStack = 10,
+                inventoryIcon = "🌿",
+                canPickup = true
+            }
+        }
+    },
+    
+    -- ITEMS - No click actions, basic materials
+    wood = {
+        name = "Wood",
+        description = "Basic crafting material from trees. Essential for many recipes.",
+        model = "WoodModel",
+        category = Categories.Item,
+        -- No actionType - items have no click actions
+        components = {
+            Draggable = {
+                force = 6000,
+                maxDistance = 30,
+                dampening = 0.5
+            },
+            Hoverable = {
+                displayName = "Wood",
+                description = "Basic crafting material from trees. Essential for many recipes.",
+                highlightColor = Color3.fromRGB(139, 69, 19)
+            },
+            Inventoryable = {
+                stackable = false,
+                maxStack = 1,
+                canPickup = true
+            }
+        }
+    },
+    
+    stone = {
+        name = "Stone",
+        description = "Solid rock material. Useful for construction and crafting.",
+        model = "StoneModel",
+        category = Categories.Item,
+        -- No actionType - items have no click actions
         components = {
             Draggable = {
                 force = 8000,
@@ -157,15 +174,13 @@ ItemDefinitions.items = {
                 dampening = 0.6
             },
             Hoverable = {
-                displayName = "Boots",
-                description = "Sturdy footwear that protects your feet and improves mobility.",
-                highlightColor = Color3.fromRGB(150, 255, 150)
+                displayName = "Stone",
+                description = "Solid rock material. Useful for construction and crafting.",
+                highlightColor = Color3.fromRGB(128, 128, 128)
             },
             Inventoryable = {
                 stackable = false,
                 maxStack = 1,
-                category = Categories.Armor,
-                inventoryIcon = "🥾",
                 canPickup = true
             }
         }

@@ -59,109 +59,60 @@ function ArmorServerSystem:CleanupPlayerArmor(player)
     end
     
     playerArmor[player] = nil
-    
-    print("Cleaned up armor for player:", player.Name)
 end
 
 function ArmorServerSystem:HandleArmorRequest(player, action, ...)
     local args = {...}
     
-    print("[ARMOR SERVER DEBUG] ========== ARMOR REQUEST RECEIVED ==========")
-    print("[ARMOR SERVER DEBUG] Player:", player.Name)
-    print("[ARMOR SERVER DEBUG] Action:", action)
-    print("[ARMOR SERVER DEBUG] Args count:", #args)
-    for i, arg in ipairs(args) do
-        print("[ARMOR SERVER DEBUG] Arg", i, ":", arg)
-    end
-    
     if action == "equip_armor" then
         local armorSlot, hotbarItem = args[1], args[2]
-        print("[ARMOR SERVER DEBUG] Processing equip_armor request")
-        print("[ARMOR SERVER DEBUG] Armor slot:", armorSlot)
-        print("[ARMOR SERVER DEBUG] Hotbar item:", hotbarItem)
         return self:EquipArmor(player, armorSlot, hotbarItem)
     elseif action == "unequip_armor" then
         local armorSlot = args[1]
-        print("[ARMOR SERVER DEBUG] Processing unequip_armor request")
-        print("[ARMOR SERVER DEBUG] Armor slot:", armorSlot)
         return self:UnequipArmor(player, armorSlot)
     else
-        print("[ARMOR SERVER DEBUG] ERROR: Unknown armor action:", action)
         warn("Unknown armor action:", action)
         return false, "Unknown action"
     end
-    
-    print("[ARMOR SERVER DEBUG] ================================================")
 end
 
 function ArmorServerSystem:EquipArmor(player, armorSlot, hotbarItem)
-    print("[ARMOR SERVER DEBUG] --- EquipArmor START ---")
-    print("[ARMOR SERVER DEBUG] Player:", player.Name)
-    print("[ARMOR SERVER DEBUG] Armor slot:", armorSlot)
-    print("[ARMOR SERVER DEBUG] Hotbar item:", hotbarItem)
-    
     -- Validate armor slot
     if not self:IsValidArmorSlot(armorSlot) then
-        print("[ARMOR SERVER DEBUG] ERROR: Invalid armor slot:", armorSlot)
         return false, "Invalid armor slot"
     end
-    print("[ARMOR SERVER DEBUG] Armor slot validation passed")
     
     -- Check if armor slot is already occupied
     if playerArmor[player][armorSlot] then
-        print("[ARMOR SERVER DEBUG] ERROR: Armor slot already occupied:", armorSlot)
-        print("[ARMOR SERVER DEBUG] Current armor in slot:", playerArmor[player][armorSlot].itemName)
         return false, "Armor slot already occupied"
     end
-    print("[ARMOR SERVER DEBUG] Armor slot is empty, proceeding")
     
     -- Validate hotbar item
     if not hotbarItem or not hotbarItem.object then
-        print("[ARMOR SERVER DEBUG] ERROR: Invalid hotbar item")
-        print("[ARMOR SERVER DEBUG] hotbarItem:", hotbarItem)
-        print("[ARMOR SERVER DEBUG] hotbarItem.object:", hotbarItem and hotbarItem.object)
         return false, "Invalid hotbar item"
     end
-    print("[ARMOR SERVER DEBUG] Hotbar item validation passed")
-    print("[ARMOR SERVER DEBUG] Item name:", hotbarItem.itemName)
-    print("[ARMOR SERVER DEBUG] Item ID:", hotbarItem.itemId)
-    print("[ARMOR SERVER DEBUG] Item object:", hotbarItem.object)
     
     -- Validate that item is compatible armor
     local itemDef = ItemDefinitions:GetItem(hotbarItem.itemId)
-    print("[ARMOR SERVER DEBUG] Item definition lookup result:", itemDef)
     
     if not itemDef then
-        print("[ARMOR SERVER DEBUG] ERROR: No item definition found for ID:", hotbarItem.itemId)
         return false, "Item definition not found"
     end
     
-    print("[ARMOR SERVER DEBUG] Item definition details:")
-    print("[ARMOR SERVER DEBUG]   - Category:", itemDef.category)
-    print("[ARMOR SERVER DEBUG]   - Armor Slot:", itemDef.armorSlot)
-    
     if itemDef.category ~= Categories.Armor then
-        print("[ARMOR SERVER DEBUG] ERROR: Item is not armor, category:", itemDef.category)
         return false, "Item is not armor"
     end
     
     if itemDef.armorSlot ~= armorSlot then
-        print("[ARMOR SERVER DEBUG] ERROR: Armor slot mismatch")
-        print("[ARMOR SERVER DEBUG]   - Item slot:", itemDef.armorSlot)
-        print("[ARMOR SERVER DEBUG]   - Target slot:", armorSlot)
         return false, "Item is not compatible armor"
     end
-    
-    print("[ARMOR SERVER DEBUG] Item compatibility validation passed")
 
     -- Validate that player can equip this item (distance check)
     -- IMPORTANT: Skip distance check if item is already in ReplicatedStorage (i.e., in inventory)
     if hotbarItem.object.Parent ~= ReplicatedStorage then
         local canEquip = self:CanPlayerEquipItem(player, hotbarItem.object)
-        print("[ARMOR SERVER DEBUG] Distance check result:", canEquip)
         
         if not canEquip then
-            print("[ARMOR SERVER DEBUG] ERROR: Player too far from item")
             return false, "Player cannot equip this item"
         end
     end
@@ -175,19 +126,10 @@ function ArmorServerSystem:EquipArmor(player, armorSlot, hotbarItem)
         originalParent = hotbarItem.object.Parent
     }
     
-    print("[ARMOR SERVER DEBUG] Created armor info:", armorInfo)
-    
     -- Equip armor (move to ReplicatedStorage for safekeeping)
     playerArmor[player][armorSlot] = armorInfo
     hotbarItem.object.Parent = ReplicatedStorage
     hotbarItem.object.Anchored = true
-    
-    print("[ARMOR SERVER DEBUG] Armor equipped successfully")
-    print("[ARMOR SERVER DEBUG] Object moved to ReplicatedStorage and anchored")
-    print("[ARMOR SERVER DEBUG] Player armor state:", playerArmor[player])
-    
-    print("[ARMOR SERVER DEBUG] SUCCESS: Player", player.Name, "equipped", hotbarItem.itemName, "to", armorSlot)
-    print("[ARMOR SERVER DEBUG] --- EquipArmor END ---")
 
     InventoryServerSystem:RemoveItemByObject(player, hotbarItem.object)
 
@@ -229,6 +171,9 @@ function ArmorServerSystem:UnequipArmor(player, armorSlot)
             armorItem.object.CFrame = CFrame.new(0, 10, 0)
             armorItem.object.Anchored = false
         end
+        
+        -- WorldCleanupSystem removed - no longer needed
+        
         playerArmor[player][armorSlot] = nil
         return true, "Inventory full - dropped to world"
     end
@@ -276,6 +221,8 @@ function ArmorServerSystem:DropArmorToWorld(player, armorObject)
         armorObject.CFrame = CFrame.new(0, 10, 0)
         armorObject.Anchored = false
     end
+    
+    -- WorldCleanupSystem removed - no longer needed
 end
 
 -- Public methods for other systems

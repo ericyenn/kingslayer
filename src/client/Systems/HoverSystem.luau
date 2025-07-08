@@ -12,14 +12,30 @@ local player = Players.LocalPlayer
 local mouse = player:GetMouse()
 
 local currentHoveredItem = nil
+local heartbeatConnection = nil
 
 function HoverSystem:Initialize()
     -- Connect to heartbeat for continuous hover detection
-    RunService.Heartbeat:Connect(function()
+    heartbeatConnection = RunService.Heartbeat:Connect(function()
         self:Update()
     end)
     
     print("Hover system initialized")
+end
+
+-- Cleanup method for proper connection management
+function HoverSystem:Cleanup()
+    -- Disconnect heartbeat connection
+    if heartbeatConnection then
+        heartbeatConnection:Disconnect()
+        heartbeatConnection = nil
+    end
+    
+    -- Clear any active hover state
+    if currentHoveredItem then
+        self:StopHover(currentHoveredItem)
+        currentHoveredItem = nil
+    end
 end
 
 function HoverSystem:Update()

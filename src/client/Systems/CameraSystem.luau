@@ -23,7 +23,7 @@ function CameraSystem:Initialize()
     UserInputService.MouseIconEnabled = false
     self:CreateCrosshair()
     
-    print("Camera locked to first person with crosshair")
+    print("Camera locked to first person mode")
 end
 
 function CameraSystem:CreateCrosshair()
@@ -32,46 +32,30 @@ function CameraSystem:CreateCrosshair()
     crosshairGui.Name = "CrosshairGui"
     crosshairGui.ResetOnSpawn = false
     crosshairGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+    crosshairGui.IgnoreGuiInset = true -- This ensures proper centering
     crosshairGui.Parent = playerGui
     
-    -- Crosshair frame (center of screen)
-    local crosshairFrame = Instance.new("Frame")
-    crosshairFrame.Name = "Crosshair"
-    crosshairFrame.Size = UDim2.new(0, 20, 0, 20)
-    crosshairFrame.Position = UDim2.new(0.5, -10, 0.5, -10) -- Center of screen
-    crosshairFrame.BackgroundTransparency = 1
-    crosshairFrame.Parent = crosshairGui
+    -- Create a simple dot crosshair
+    local crosshairDot = Instance.new("Frame")
+    crosshairDot.Name = "CrosshairDot"
+    crosshairDot.Size = UDim2.new(0, 6, 0, 6) -- Small 6x6 pixel dot
+    crosshairDot.Position = UDim2.new(0.5, -3, 0.5, -3) -- Perfect center
+    crosshairDot.BackgroundColor3 = Color3.fromRGB(255, 255, 255) -- White dot
+    crosshairDot.BorderSizePixel = 0
+    crosshairDot.Parent = crosshairGui
     
-    -- Horizontal line
-    local horizontalLine = Instance.new("Frame")
-    horizontalLine.Name = "HorizontalLine"
-    horizontalLine.Size = UDim2.new(0, 12, 0, 2)
-    horizontalLine.Position = UDim2.new(0.5, -6, 0.5, -1)
-    horizontalLine.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
-    horizontalLine.BorderSizePixel = 0
-    horizontalLine.Parent = crosshairFrame
+    -- Make it circular
+    local corner = Instance.new("UICorner")
+    corner.CornerRadius = UDim.new(1, 0) -- Fully rounded = circle
+    corner.Parent = crosshairDot
     
-    -- Vertical line
-    local verticalLine = Instance.new("Frame")
-    verticalLine.Name = "VerticalLine"
-    verticalLine.Size = UDim2.new(0, 2, 0, 12)
-    verticalLine.Position = UDim2.new(0.5, -1, 0.5, -6)
-    verticalLine.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
-    verticalLine.BorderSizePixel = 0
-    verticalLine.Parent = crosshairFrame
+    -- Add black outline for visibility against all backgrounds
+    local outline = Instance.new("UIStroke")
+    outline.Color = Color3.fromRGB(0, 0, 0)
+    outline.Thickness = 1
+    outline.Parent = crosshairDot
     
-    -- Add black outline for visibility
-    local hOutline = Instance.new("UIStroke")
-    hOutline.Color = Color3.fromRGB(0, 0, 0)
-    hOutline.Thickness = 1
-    hOutline.Parent = horizontalLine
-    
-    local vOutline = Instance.new("UIStroke")
-    vOutline.Color = Color3.fromRGB(0, 0, 0)
-    vOutline.Thickness = 1
-    vOutline.Parent = verticalLine
-    
-    print("Crosshair created")
+    print("Crosshair dot created")
 end
 
 function CameraSystem:ShowCrosshair()

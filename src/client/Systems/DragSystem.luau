@@ -34,9 +34,7 @@ function DragSystem:Initialize()
     dragTargetAttachment.Name = "DragTarget"
     dragTargetAttachment.Parent = workspace.Terrain
     
-    -- Debug: Check if RemoteEvents are available
-    print("RemoteEvents available:", RemoteEvents ~= nil) -- Debug
-    print("DragRequest available:", RemoteEvents and RemoteEvents.DragRequest ~= nil) -- Debug
+
     
     -- Handle mouse input
     UserInputService.InputBegan:Connect(function(input, gameProcessed)
@@ -96,6 +94,16 @@ function DragSystem:UpdateHoverDetection()
         return
     end
     
+    -- OPTIMIZATION: Skip hover detection when UIs are open to avoid interference
+    if self:IsUIOpen() then
+        -- Clear any existing hover state when UI opens
+        if hoveredObject then
+            self:StopHover(hoveredObject)
+            hoveredObject = nil
+        end
+        return
+    end
+    
     local hitObject = self:RaycastFromMouse()
     
     if hitObject ~= hoveredObject then
@@ -132,16 +140,13 @@ function DragSystem:RaycastFromMouse()
     local raycastResult = workspace:Raycast(ray.Origin, ray.Direction * Constants.DRAG.RAYCAST_DISTANCE, raycastParams)
     
     if raycastResult then
-        -- Debug: Print raycast hits occasionally
-        if math.random() < 0.05 then -- 5% chance to avoid spam
-            print("Raycast hit:", raycastResult.Instance.Name, "Draggable:", self:IsObjectDraggable(raycastResult.Instance))
+        -- OPTIMIZATION: Only return draggable objects to avoid processing non-interactive hits
+        local hitObject = raycastResult.Instance
+        if self:IsObjectDraggable(hitObject) then
+            return hitObject
         end
-        return raycastResult.Instance
-    else
-        -- Debug: Print when raycast misses occasionally
-        if math.random() < 0.01 then -- 1% chance to avoid spam
-            print("Raycast missed")
-        end
+        -- Don't return non-draggable objects - this eliminates most spam
+        return nil
     end
     
     return nil
@@ -203,15 +208,24 @@ function DragSystem:HandleMouseDown()
         return -- Let tool handle the click
     end
     
-    print("Mouse down detected") -- Debug
-    print("Hovered object:", hoveredObject and hoveredObject.Name or "nil") -- Debug
-    print("Grabbed object:", grabbedObject and grabbedObject.Name or "nil") -- Debug
+    -- OPTIMIZATION: Skip drag processing when UIs are open
+    if self:IsUIOpen() then
+        return -- Let UI handle the click
+    end
     
-    if hoveredObject and not grabbedObject then
+    -- OPTIMIZATION: Only process mouse down if we're actually hovering something
+    if not hoveredObject then
+        return -- No point processing if nothing is hovered
+    end
+    
+    print("Mouse down detected") -- Debug
+    print("Hovered object:", hoveredObject.Name) -- Debug
+    
+    if not grabbedObject then
         print("Attempting to pickup:", hoveredObject.Name) -- Debug
         self:PickupObject(hoveredObject)
     else
-        print("Cannot pickup - hoveredObject:", hoveredObject ~= nil, "grabbedObject:", grabbedObject ~= nil) -- Debug
+        print("Cannot pickup - already have grabbed object:", grabbedObject.Name) -- Debug
     end
 end
 
@@ -221,15 +235,20 @@ function DragSystem:HandleMouseUp()
         return -- Let tool handle the mouse up
     end
     
-    print("Mouse up detected") -- Debug
-    print("Grabbed object:", grabbedObject and grabbedObject.Name or "nil") -- Debug
-    
-    if grabbedObject then
-        print("Attempting to drop:", grabbedObject.Name) -- Debug
-        self:DropObject(grabbedObject)
-    else
-        print("No object to drop") -- Debug
+    -- OPTIMIZATION: Skip drag processing when UIs are open (but still allow dropping)
+    if self:IsUIOpen() and not grabbedObject then
+        return -- Let UI handle the click, but allow dropping if we have something
     end
+    
+    -- OPTIMIZATION: Only process mouse up if we actually have a grabbed object
+    if not grabbedObject then
+        return -- No point processing if nothing is grabbed
+    end
+    
+    print("Mouse up detected") -- Debug
+    print("Grabbed object:", grabbedObject.Name) -- Debug
+    print("Attempting to drop:", grabbedObject.Name) -- Debug
+    self:DropObject(grabbedObject)
 end
 
 function DragSystem:PickupObject(object)
@@ -304,8 +323,6 @@ function DragSystem:PickupObject(object)
 end
 
 function DragSystem:DropObject(object)
-    print("Attempting server drop request for:", object.Name) -- Debug
-    
     -- Request drop from server with error handling
     local success, result, message = pcall(function()
         return RemoteEvents.DragRequest:InvokeServer("drop", object)
@@ -315,14 +332,13 @@ function DragSystem:DropObject(object)
         warn("RemoteFunction call failed:", result)
     else
         local serverSuccess, serverMessage = result, message
-        print("Server drop response - Success:", serverSuccess, "Message:", serverMessage) -- Debug
         
         if not serverSuccess then
             warn("Failed to drop object:", serverMessage)
         end
     end
     
-    -- Clean up constraints regardless of server response
+    -- Clean up constraints
     if alignPosition then
         alignPosition:Destroy()
         alignPosition = nil
@@ -345,8 +361,6 @@ function DragSystem:DropObject(object)
     end
     
     grabbedObject = nil
-    
-    print("Cleaned up drag constraints for:", object.Name)
 end
 
 function DragSystem:CheckDragDistance()
@@ -361,19 +375,27 @@ function DragSystem:CheckDragDistance()
 end
 
 function DragSystem:Cleanup()
+    -- Disconnect heartbeat connection
     if heartbeatConnection then
         heartbeatConnection:Disconnect()
         heartbeatConnection = nil
     end
     
+    -- Drop any grabbed object
     if grabbedObject then
         self:DropObject(grabbedObject)
     end
     
+    -- Clean up drag target attachment
     if dragTargetAttachment then
         dragTargetAttachment:Destroy()
         dragTargetAttachment = nil
     end
+    
+    -- Clear all state
+    grabbedObject = nil
+    hoveredObject = nil
+    dragDistance = 5
 end
 
 function DragSystem:GetHoveredObject()
@@ -384,6 +406,15 @@ function DragSystem:HasEquippedTool()
     -- Access the global inventory state to avoid circular dependency
     -- This will be set by the InventorySystem when tools are equipped/unequipped
     return _G.PlayerHasEquippedTool == true
+end
+
+function DragSystem:IsUIOpen()
+    -- Check if any UI that should block drag interactions is open
+    local isTraderOpen = _G.TraderUI and _G.TraderUI.isShopOpen
+    local isDialogueOpen = _G.DialogueUI and _G.DialogueUI.isDialogueOpen
+    local isItemDetailOpen = _G.ItemDetailUI and _G.ItemDetailUI.isDetailOpen
+    
+    return isTraderOpen or isDialogueOpen or isItemDetailOpen
 end
 
 return DragSystem 

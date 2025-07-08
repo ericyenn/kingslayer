@@ -7,31 +7,30 @@ local CollectionService = game:GetService("CollectionService")
 
 local RemoteEvents = require(ReplicatedStorage.Shared.RemoteEvents)
 local ECS = require(ReplicatedStorage.Shared.ECS)
+local Constants = require(ReplicatedStorage.Shared.Constants)
 
 -- Player inventory storage (server-side)
 local playerInventories = {}
 local playerEquippedSlots = {}
 
 function InventoryServerSystem:Initialize()
-    -- Handle inventory requests (separate from drag requests)
+    -- Initialize player inventories and equipped slots tracking
+    Players.PlayerAdded:Connect(function(player)
+        playerInventories[player] = {}
+        playerEquippedSlots[player] = nil
+        print("Initialized inventory for player:", player.Name)
+    end)
+    
+    Players.PlayerRemoving:Connect(function(player)
+        self:CleanupPlayerInventory(player)
+    end)
+    
+    -- Set up RemoteFunction connections
     RemoteEvents.InventoryRequest.OnServerInvoke = function(player, action, ...)
         return self:HandleInventoryRequest(player, action, ...)
     end
     
-    -- Initialize empty inventories for existing players
-    for _, player in pairs(Players:GetPlayers()) do
-        self:InitializePlayerInventory(player)
-    end
-    
-    -- Initialize for new players
-    Players.PlayerAdded:Connect(function(player)
-        self:InitializePlayerInventory(player)
-    end)
-    
-    -- Clean up when players leave
-    Players.PlayerRemoving:Connect(function(player)
-        self:CleanupPlayerInventory(player)
-    end)
+    -- SIMPLIFIED: No periodic cleanup needed
     
     print("Inventory server system initialized")
 end
@@ -49,22 +48,43 @@ function InventoryServerSystem:InitializePlayerInventory(player)
 end
 
 function InventoryServerSystem:CleanupPlayerInventory(player)
-    -- Remove any equipped tools first
-    self:RemoveToolFromCharacter(player)
-    
-    -- Drop all items from inventory back to world
-    if playerInventories[player] then
-        for slot, inventoryItem in pairs(playerInventories[player]) do
-            if inventoryItem then
-                self:DropItemToWorld(player, inventoryItem.object)
+    -- Clean up all tools in character first
+    if player.Character then
+        for _, child in pairs(player.Character:GetChildren()) do
+            if child:IsA("Tool") then
+                pcall(function() child:Destroy() end)
             end
         end
     end
     
+    -- Drop all inventory items to world
+    if playerInventories[player] then
+        for slot, inventoryItem in pairs(playerInventories[player]) do
+            if inventoryItem then
+                pcall(function()
+                    self:DropItemToWorld(player, inventoryItem.object)
+                end)
+            end
+        end
+    end
+    
+    -- Clear player data
     playerInventories[player] = nil
     playerEquippedSlots[player] = nil
+end
+
+-- Cleanup method for system shutdown
+function InventoryServerSystem:Cleanup()
+    -- Clean up all players
+    for player, _ in pairs(playerInventories) do
+        pcall(function()
+            self:CleanupPlayerInventory(player)
+        end)
+    end
     
-    print("Cleaned up inventory for player:", player.Name)
+    -- Clear tracking tables
+    playerInventories = {}
+    playerEquippedSlots = {}
 end
 
 function InventoryServerSystem:HandleInventoryRequest(player, action, ...)
@@ -89,18 +109,13 @@ function InventoryServerSystem:HandleInventoryRequest(player, action, ...)
 end
 
 function InventoryServerSystem:PickupToInventory(player, object, slot)
-    print("=== SERVER PICKUP DEBUG START ===")
-    print("Player:", player.Name, "attempting to pickup", object.Name, "to slot", slot)
-    
     if not object or not object.Parent then
-        print("SERVER PICKUP: Invalid object")
         return false, "Invalid object"
     end
     
     local isValidItem = self:IsValidItem(object)
     
     if not isValidItem then
-        print("SERVER PICKUP: Object is not a valid item")
         return false, "Object is not a valid item"
     end
     
@@ -108,7 +123,6 @@ function InventoryServerSystem:PickupToInventory(player, object, slot)
     local canPlayerPickup = self:CanPlayerPickup(player, object)
     
     if not canPlayerPickup then
-        print("SERVER PICKUP: Cannot pickup this item")
         return false, "Cannot pickup this item"
     end
     
@@ -116,7 +130,6 @@ function InventoryServerSystem:PickupToInventory(player, object, slot)
     local slotOccupied = playerInventories[player][slot] ~= nil
     
     if slotOccupied then
-        print("SERVER PICKUP: Slot", slot, "is occupied by:", playerInventories[player][slot].itemName)
         return false, "Slot is occupied"
     end
     
@@ -137,8 +150,8 @@ function InventoryServerSystem:PickupToInventory(player, object, slot)
     object.Parent = ReplicatedStorage
     object.Anchored = true
     
-    print("SERVER PICKUP: Successfully stored", object.Name, "in slot", slot)
-    print("=== SERVER PICKUP DEBUG END ===")
+    -- WorldCleanupSystem removed - no longer needed
+    
     return true, "Successfully picked up", itemIcon
 end
 
@@ -174,51 +187,22 @@ function InventoryServerSystem:DropFromInventory(player, slot)
     object.Anchored = false
     
     -- Remove from inventory
-    -- Clear equipped slot tracking if needed
-    if playerEquippedSlots[player] == slot then
-        playerEquippedSlots[player] = nil
-    end
-
-    -- Destroy any active Tool instance held by the character
-    if inventoryItem.activeTool and inventoryItem.activeTool.Parent then
-        inventoryItem.activeTool:Destroy()
-        inventoryItem.activeTool = nil
-    end
-
     playerInventories[player][slot] = nil
     
-    print("Player", player.Name, "dropped", object.Name, "from slot", slot)
     return true, "Successfully dropped"
 end
 
 function InventoryServerSystem:EquipSlot(player, slot)
-    print("=== SERVER EQUIP SLOT DEBUG START ===")
-    print("Player:", player.Name, "requesting to equip slot:", slot)
-    
-    -- Debug: Log current server state
-    print("SERVER STATE BEFORE EQUIP:")
-    print("  - Current equipped slot:", playerEquippedSlots[player])
-    if playerInventories[player] then
-        for i = 1, 10 do
-            local item = playerInventories[player][i]
-            if item then
-                print("  - Server slot", i, "contains:", item.itemName)
-            end
-        end
-    end
-    
     -- Handle unequip request (slot = nil means unequip)
     if slot == nil then
         -- Remove any currently equipped tool
         self:RemoveToolFromCharacter(player)
         playerEquippedSlots[player] = nil
-        print("SERVER EQUIP: Player", player.Name, "unequipped - hands are empty")
         return true, "Unequipped - hands are empty"
     end
     
     -- If already equipped to this slot, don't do anything
     if playerEquippedSlots[player] == slot then
-        print("SERVER EQUIP: Slot", slot, "already equipped")
         return true, "Already equipped slot " .. slot
     end
     
@@ -229,7 +213,6 @@ function InventoryServerSystem:EquipSlot(player, slot)
     if not playerInventories[player][slot] then
         -- Unequip if trying to equip empty slot
         playerEquippedSlots[player] = nil
-        print("SERVER EQUIP: Slot", slot, "is empty, unequipping")
         return true, "Unequipped"
     end
     
@@ -240,8 +223,6 @@ function InventoryServerSystem:EquipSlot(player, slot)
     self:CreateToolInCharacter(player, slot)
     
     local equippedItem = playerInventories[player][slot]
-    print("SERVER EQUIP: Successfully equipped slot", slot, "containing:", equippedItem.itemName)
-    print("=== SERVER EQUIP SLOT DEBUG END ===")
     
     return true, "Equipped slot " .. slot .. " with " .. equippedItem.itemName
 end
@@ -293,6 +274,8 @@ function InventoryServerSystem:DropItemToWorld(player, object)
         object.CFrame = CFrame.new(0, 10, 0)
         object.Anchored = false
     end
+    
+    -- WorldCleanupSystem removed - no longer needed
 end
 
 function InventoryServerSystem:GetPlayerInventory(player)
@@ -311,17 +294,14 @@ function InventoryServerSystem:CreateToolInCharacter(player, slot)
         return
     end
     
-    -- Check if tool already exists for this slot
-    if inventoryItem.activeTool and inventoryItem.activeTool.Parent then
-        return -- Tool already exists
-    end
-    
     local character = player.Character
-    
     if not character then
         warn("Cannot create tool: player has no character")
         return
     end
+    
+    -- Remove any existing tool first
+    self:RemoveToolFromCharacter(player)
     
     local originalObject = inventoryItem.object
     
@@ -331,74 +311,67 @@ function InventoryServerSystem:CreateToolInCharacter(player, slot)
     tool.RequiresHandle = true
     tool.CanBeDropped = false -- Prevent default Roblox dropping
     
-    -- Clone the original object to use as Handle
+    -- Set grip properties to control tool orientation
+    tool.GripForward = Vector3.new(0, 1, 0)   -- Point upward
+    tool.GripRight = Vector3.new(0, 0, -1)    -- Keep right vector
+    tool.GripUp = Vector3.new(1, 0, 0)        -- What was forward is now up
+    tool.GripPos = Vector3.new(0, 0, 0)       -- Grip position offset
+    
+    -- Clone the original object as Handle
     local handle = originalObject:Clone()
     handle.Name = "Handle"
-    handle.Parent = tool
     handle.Anchored = false
     
-    -- Ensure handle has proper collision and physics
+    -- Ensure handle has proper physics
     if handle:IsA("BasePart") then
-        handle.CanCollide = false -- Tools shouldn't collide when held
+        handle.CanCollide = false
         handle.TopSurface = Enum.SurfaceType.Smooth
         handle.BottomSurface = Enum.SurfaceType.Smooth
     end
     
+    handle.Parent = tool
+    
     -- Add tool interaction script
     self:AddToolScript(tool)
     
-    -- Parent to character (this equips it)
+    -- Equip the tool
     tool.Parent = character
     
     -- Store reference for cleanup
     inventoryItem.activeTool = tool
-    
-    print("Created tool", tool.Name, "for player", player.Name)
 end
 
 function InventoryServerSystem:RemoveToolFromCharacter(player)
-    -- Find any existing equipped tool and remove it
+    -- Simple approach: remove all tools from character
     local character = player.Character
     if not character then return end
     
-    -- Remove all tools from character (there should only be one from our system)
-    local tools = character:GetChildren()
-    local toolsRemoved = 0
-    
-    for _, child in pairs(tools) do
-        if child:IsA("Tool") then
-            -- Check if this tool belongs to our inventory system
-            local inventoryItem = self:FindInventoryItemByTool(player, child)
+    -- Clear activeTool references first
+    if playerInventories[player] then
+        for slot, inventoryItem in pairs(playerInventories[player]) do
             if inventoryItem then
                 inventoryItem.activeTool = nil
-                child:Destroy()
-                toolsRemoved = toolsRemoved + 1
-                print("Removed tool", child.Name, "from player", player.Name)
             end
         end
     end
-end
-
-function InventoryServerSystem:FindInventoryItemByTool(player, tool)
-    -- Find which inventory slot contains this tool
-    for slot, inventoryItem in pairs(playerInventories[player]) do
-        if inventoryItem.activeTool == tool then
-            return inventoryItem
+    
+    -- Remove all tools from character
+    for _, child in pairs(character:GetChildren()) do
+        if child:IsA("Tool") then
+            pcall(function() child:Destroy() end)
         end
     end
-    return nil
 end
+
+
 
 function InventoryServerSystem:AddToolScript(tool)
     -- Clone the pre-made tool handler script
-    print("DEBUG: Looking for ToolHandler script template...")
     local toolHandlerTemplate = ReplicatedStorage:FindFirstChild("Shared"):FindFirstChild("ToolHandler")
     
     if toolHandlerTemplate then
-        print("DEBUG: Found ToolHandler template:", toolHandlerTemplate:GetFullName())
         local toolScript = toolHandlerTemplate:Clone()
         toolScript.Parent = tool
-        print("DEBUG: Successfully cloned ToolHandler script to tool:", tool.Name)
     else
         -- Fallback: just add a simple identifier
         local toolId = Instance.new("StringValue")
@@ -406,32 +379,16 @@ function InventoryServerSystem:AddToolScript(tool)
         toolId.Value = tool.Name
         toolId.Parent = tool
         warn("Tool script template not found - tools may not function properly")
-        print("DEBUG: ReplicatedStorage.Shared contents:")
-        for _, child in pairs(ReplicatedStorage.Shared:GetChildren()) do
-            print("  -", child.Name, child.ClassName)
-        end
     end
 end
 
 function InventoryServerSystem:SwapSlots(player, slot1, slot2)
-    print("=== SERVER SWAP SLOTS DEBUG START ===")
-    print("Player:", player.Name, "requesting to swap slots", slot1, "and", slot2)
-    
-    -- Debug: Log current server state before swap
-    print("SERVER STATE BEFORE SWAP:")
-    if playerInventories[player] then
-        print("  - Server slot", slot1, "contains:", playerInventories[player][slot1] and playerInventories[player][slot1].itemName or "EMPTY")
-        print("  - Server slot", slot2, "contains:", playerInventories[player][slot2] and playerInventories[player][slot2].itemName or "EMPTY")
-    end
-    
     -- Validate slots
     if slot1 < 1 or slot1 > 10 or slot2 < 1 or slot2 > 10 then
-        print("SERVER SWAP: Invalid slot numbers")
         return false, "Invalid slot numbers"
     end
     
     if not playerInventories[player] then
-        print("SERVER SWAP: Player inventory not found")
         return false, "Player inventory not found"
     end
     
@@ -442,14 +399,6 @@ function InventoryServerSystem:SwapSlots(player, slot1, slot2)
     -- Perform the swap on server
     playerInventories[player][slot1] = item2
     playerInventories[player][slot2] = item1
-    
-    -- Debug: Log server state after swap
-    print("SERVER STATE AFTER SWAP:")
-    print("  - Server slot", slot1, "now contains:", playerInventories[player][slot1] and playerInventories[player][slot1].itemName or "EMPTY")
-    print("  - Server slot", slot2, "now contains:", playerInventories[player][slot2] and playerInventories[player][slot2].itemName or "EMPTY")
-    
-    print("SERVER SWAP: Successfully swapped slots", slot1, "and", slot2)
-    print("=== SERVER SWAP SLOTS DEBUG END ===")
     
     return true, "Slots swapped successfully"
 end
@@ -513,5 +462,32 @@ function InventoryServerSystem:AddItemToFirstEmptySlot(player, object)
 
     return true, emptySlot
 end
+
+-- Remove item from specific slot
+function InventoryServerSystem:RemoveItemBySlot(player, slot)
+    if not playerInventories[player] or not playerInventories[player][slot] then
+        return false
+    end
+    
+    local inventoryItem = playerInventories[player][slot]
+    
+    -- Clear equipped slot tracking if needed
+    if playerEquippedSlots[player] == slot then
+        playerEquippedSlots[player] = nil
+    end
+    
+    -- Destroy any active Tool instance held by the character
+    if inventoryItem.activeTool and inventoryItem.activeTool.Parent then
+        inventoryItem.activeTool:Destroy()
+        inventoryItem.activeTool = nil
+    end
+    
+    -- Clear the slot
+    playerInventories[player][slot] = nil
+    
+    return true
+end
+
+-- REMOVED: Cleanup function - let Roblox handle object lifecycle
 
 return InventoryServerSystem 

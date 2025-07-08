@@ -21,6 +21,10 @@ function InventorySystem:Initialize()
     -- Set up global reference for ArmorSystem communication (minimal coupling)
     _G.InventorySystem = self
     
+    -- Register with SystemManager for ArmorSystem access
+    local SystemManager = require(ReplicatedStorage.Shared.SystemManager)
+    SystemManager.RegisterSystem("InventorySystem", self)
+    
     -- Independent input connection (separate from DragSystem)
     UserInputService.InputBegan:Connect(function(input, gameProcessed)
         if gameProcessed then return end
@@ -35,6 +39,11 @@ function InventorySystem:Initialize()
                 self:HandleSlotSelection(slotNumber)
             end
         end
+    end)
+    
+    -- Listen for inventory updates from server
+    RemoteEvents.UpdateInventory.OnClientEvent:Connect(function(serverInventory)
+        self:UpdateInventoryFromServer(serverInventory)
     end)
     
     -- Initialize empty inventory (10 slots)
@@ -113,10 +122,14 @@ function InventorySystem:PickupToInventory(object)
     local serverSuccess, serverMessage, serverIcon = result, message, icon
     
     if serverSuccess then
-        -- Add to local inventory
+        -- Get itemId from object name
+        local itemId = self:GetItemIdFromObject(object)
+        
+        -- Add to local inventory with itemId
         local inventoryItem = {
             object = object,
             itemName = object.Name,
+            itemId = itemId,  -- Add the missing itemId
             icon = serverIcon -- Use icon from server response
         }
         
@@ -293,7 +306,8 @@ function InventorySystem:GetEquippedItem()
     if equippedSlot and playerInventory[equippedSlot] then
         local inventoryItem = playerInventory[equippedSlot]
         
-        local itemId = self:GetItemIdFromObject(inventoryItem.object)
+        -- Use stored itemId if available, otherwise generate from object
+        local itemId = inventoryItem.itemId or self:GetItemIdFromObject(inventoryItem.object)
         
         local result = {
             itemName = inventoryItem.itemName,
@@ -310,40 +324,25 @@ end
 
 function InventorySystem:GetItemIdFromObject(object)
     -- Helper function to get item ID from object name
-    -- This assumes object name matches item definition key
-    return string.lower(object.Name)
+    -- Convert object name to itemId format (lowercase with underscores)
+    local itemId = string.lower(object.Name)
+    itemId = string.gsub(itemId, " ", "_")  -- Replace spaces with underscores
+    return itemId
 end
 
 function InventorySystem:HandleArmorEquipped()
-    print("[INVENTORY DEBUG] --- HandleArmorEquipped START ---")
-    print("[INVENTORY DEBUG] Called by ArmorSystem - armor was equipped from hotbar")
-    print("[INVENTORY DEBUG] Current equipped slot before removal:", equippedSlot)
-    
     -- Called by ArmorSystem when armor is equipped from hotbar
     if equippedSlot and playerInventory[equippedSlot] then
-        local removedItem = playerInventory[equippedSlot]
-        print("[INVENTORY DEBUG] Removing item from hotbar:", removedItem.itemName, "in slot", equippedSlot)
-        
         -- Remove equipped item from hotbar inventory
         playerInventory[equippedSlot] = nil
         equippedSlot = nil
         
-        print("[INVENTORY DEBUG] Item removed, equipped slot cleared")
-        
         -- Update hotbar UI
         self:UpdateHotbarUI()
-        print("[INVENTORY DEBUG] Hotbar UI updated")
         
         -- Update global state
         _G.PlayerHasEquippedTool = self:HasEquippedTool()
-        print("[INVENTORY DEBUG] Global state updated - HasEquippedTool:", _G.PlayerHasEquippedTool)
-        
-        print("[INVENTORY DEBUG] SUCCESS: Hotbar item moved to armor slot")
-    else
-        print("[INVENTORY DEBUG] WARNING: No equipped item to remove from hotbar")
     end
-    
-    print("[INVENTORY DEBUG] --- HandleArmorEquipped END ---")
 end
 
 function InventorySystem:HandleArmorUnequipped(armorItem)
@@ -368,6 +367,7 @@ function InventorySystem:HandleArmorUnequipped(armorItem)
     local inventoryItem = {
         object = armorItem.object,
         itemName = armorItem.itemName,
+        itemId = armorItem.itemId,  -- Include itemId for proper item identification
         icon = self:GetItemIcon(armorItem.itemId)
     }
     
@@ -393,8 +393,6 @@ function InventorySystem:HandleArmorUnequipped(armorItem)
     _G.PlayerHasEquippedTool = self:HasEquippedTool()
     print("[INVENTORY DEBUG] Global state updated - HasEquippedTool:", _G.PlayerHasEquippedTool)
     
-    print("[INVENTORY DEBUG] SUCCESS: Armor item returned to hotbar slot:", targetSlot)
-    print("[INVENTORY DEBUG] --- HandleArmorUnequipped END ---")
 end
 
 function InventorySystem:GetItemIcon(itemId)
@@ -411,16 +409,6 @@ end
 
 function InventorySystem:SwapSlots(slot1, slot2)
     -- Swap items between two slots while preserving equipped item
-    print("=== SLOT SWAP DEBUG START ===")
-    print("Swapping slots", slot1, "and", slot2)
-    
-    -- Debug: Log current state before swap
-    print("BEFORE SWAP:")
-    print("  - Slot", slot1, "contains:", playerInventory[slot1] and playerInventory[slot1].itemName or "EMPTY")
-    print("  - Slot", slot2, "contains:", playerInventory[slot2] and playerInventory[slot2].itemName or "EMPTY")
-    print("  - Currently equipped slot:", equippedSlot)
-    print("  - Equipped item:", equippedSlot and playerInventory[equippedSlot] and playerInventory[equippedSlot].itemName or "NONE")
-    
     -- Get current items
     local item1 = playerInventory[slot1]
     local item2 = playerInventory[slot2]
@@ -428,11 +416,6 @@ function InventorySystem:SwapSlots(slot1, slot2)
     -- Perform the swap
     playerInventory[slot1] = item2
     playerInventory[slot2] = item1
-    
-    -- Debug: Log state after local swap
-    print("AFTER LOCAL SWAP:")
-    print("  - Slot", slot1, "now contains:", playerInventory[slot1] and playerInventory[slot1].itemName or "EMPTY")
-    print("  - Slot", slot2, "now contains:", playerInventory[slot2] and playerInventory[slot2].itemName or "EMPTY")
     
     -- CRITICAL: Preserve equipped item by updating equippedSlot if needed
     local originalEquippedSlot = equippedSlot
@@ -513,9 +496,73 @@ function InventorySystem:EquipSlotDirect(slot)
 
     if success and result then
         self:EquipSlot(slot)
+        return true
     else
         warn("EquipSlotDirect failed:", message)
+        return false
     end
+end
+
+-- Method called by ArmorSystem to get currently equipped item
+function InventorySystem:GetEquippedItem()
+    if equippedSlot and playerInventory[equippedSlot] then
+        return playerInventory[equippedSlot]
+    end
+    return nil
+end
+
+-- Method called by ArmorSystem when armor is equipped (remove from hotbar)
+function InventorySystem:HandleArmorEquipped()
+    if equippedSlot and playerInventory[equippedSlot] then
+        -- Clear the equipped slot since item was moved to armor
+        playerInventory[equippedSlot] = nil
+        equippedSlot = nil
+        
+        -- Update hotbar UI
+        self:UpdateHotbarUI()
+        
+        -- Update global state
+        _G.PlayerHasEquippedTool = self:HasEquippedTool()
+        
+        return true
+    end
+    return false
+end
+
+-- Update inventory from server data (used after trades)
+function InventorySystem:UpdateInventoryFromServer(serverInventory)
+    print("Updating inventory from server data")
+    
+    -- Clear current inventory
+    for i = 1, 10 do
+        playerInventory[i] = nil
+    end
+    
+    -- Update with server data
+    for slot, inventoryItem in pairs(serverInventory) do
+        if inventoryItem then
+            -- Get itemId from object name if not provided
+            local itemId = inventoryItem.itemId or self:GetItemIdFromObject(inventoryItem.object or {Name = inventoryItem.itemName})
+            
+            playerInventory[slot] = {
+                itemName = inventoryItem.itemName,
+                itemId = itemId,  -- Include itemId
+                icon = inventoryItem.icon,
+                object = inventoryItem.object  -- Include object if available
+            }
+        end
+    end
+    
+    -- Clear equipped slot since items were removed
+    equippedSlot = nil
+    
+    -- Update the hotbar UI
+    self:UpdateHotbarUI()
+    
+    -- Update global state
+    _G.PlayerHasEquippedTool = self:HasEquippedTool()
+    
+    print("Inventory updated from server")
 end
 
 return InventorySystem 
