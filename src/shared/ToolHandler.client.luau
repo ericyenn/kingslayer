@@ -467,8 +467,9 @@ onUse = function(attackType)
         return 
     end
 
-    -- Convert tool name to lowercase to match ItemDefinitions keys
+    -- Convert tool name to lowercase and replace spaces with underscores to match ItemDefinitions keys
     local itemKey = string.lower(Tool.Name)
+    itemKey = string.gsub(itemKey, " ", "_")  -- Replace spaces with underscores
     local itemDef = ItemDefinitions:GetItem(itemKey)
 
     if not itemDef then
@@ -511,6 +512,8 @@ onUse = function(attackType)
     end
 
     -- Centralized dispatch based on category
+    print("ToolHandler: Dispatching", itemDef.name, "with category:", itemDef.category)
+    
     if itemDef.category == Categories.Tool then
         ToolSystem:Use(itemDef, player, target, attackType)
     elseif itemDef.category == Categories.Armor then
@@ -530,35 +533,68 @@ end
 local inputConnections = {}
 
 local function setupInputHandling()
+    print("DEBUG: setupInputHandling called for", Tool.Name)
+    
     -- Clean up existing connections
     for _, connection in pairs(inputConnections) do
         connection:Disconnect()
     end
     inputConnections = {}
     
-    -- Only setup input handling for Tools
+    -- Setup input handling for Tools and Functional items
     local itemKey = string.lower(Tool.Name)
+    itemKey = string.gsub(itemKey, " ", "_")  -- Replace spaces with underscores
     local itemDef = ItemDefinitions:GetItem(itemKey)
     
-    if not itemDef or itemDef.category ~= Categories.Tool then
-        return -- Exit early - no input handling for non-Tools
+    print("DEBUG: Item key:", itemKey, "Item def found:", itemDef ~= nil)
+    if itemDef then
+        print("DEBUG: Item category:", itemDef.category)
     end
+    
+    if not itemDef then
+        print("DEBUG: No item definition found, exiting setupInputHandling")
+        return -- Exit early - no item definition found
+    end
+    
+    -- Only Tools use charged attack system, but Functional items need basic click handling
+    local allowChargedAttacks = (itemDef.category == Categories.Tool)
+    
+    if itemDef.category ~= Categories.Tool and itemDef.category ~= Categories.Functional then
+        print("DEBUG: Item category not supported for input handling:", itemDef.category)
+        return -- Exit early - only Tools and Functional items need input handling
+    end
+    
+    print("DEBUG: Setting up input handling for", itemDef.category, "item with chargedAttacks:", allowChargedAttacks)
     
     -- Mouse input handling
     inputConnections.mouseDown = UserInputService.InputBegan:Connect(function(input, gameProcessed)
+        print("DEBUG: Mouse input detected - gameProcessed:", gameProcessed, "isToolEquipped:", isToolEquipped, "inputType:", input.UserInputType)
+        
         if gameProcessed then return end
         if not isToolEquipped then return end
         
         if input.UserInputType == Enum.UserInputType.MouseButton1 then
-            startCharging()
+            print("DEBUG: Left mouse button clicked for", Tool.Name, "allowChargedAttacks:", allowChargedAttacks)
+            if allowChargedAttacks then
+                startCharging() -- Tools use charged attack system
+            else
+                -- Functional items use immediate action on click
+                print("DEBUG: Calling onUse for functional item")
+                onUse("normal")
+            end
         end
     end)
+    
+    print("DEBUG: Mouse input connections set up for", Tool.Name)
     
     inputConnections.mouseUp = UserInputService.InputEnded:Connect(function(input, gameProcessed)
         if not isToolEquipped then return end
         
         if input.UserInputType == Enum.UserInputType.MouseButton1 then
-            stopCharging()
+            if allowChargedAttacks then
+                stopCharging() -- Only Tools use charged system
+            end
+            -- Functional items don't need mouse up handling
         end
     end)
 end
@@ -609,12 +645,15 @@ end
 
 -- Tool lifecycle events
 Tool.Equipped:Connect(function()
+    print("DEBUG: Tool.Equipped fired for", Tool.Name)
     isToolEquipped = true
     setupInputHandling()
     setupEdgeCaseHandling()
+    print("DEBUG: Tool setup complete for", Tool.Name)
 end)
 
 Tool.Unequipped:Connect(function()
+    print("DEBUG: Tool.Unequipped fired for", Tool.Name)
     isToolEquipped = false
     cancelCharging()
     
@@ -629,4 +668,5 @@ Tool.Unequipped:Connect(function()
     
     -- Ensure R6 animation cleanup
     cleanupR6ChargeAnimation()
+    print("DEBUG: Tool cleanup complete for", Tool.Name)
 end) 

@@ -51,6 +51,16 @@ if RunService:IsServer() then
     -- Server: Create damage system RemoteEvents
     local applyDamageRemote = createRemoteEvent("ApplyDamage")
     
+    -- Server: Create item consumption RemoteEvents
+    local consumeItemRequestRemote = createRemoteEvent("ConsumeItemRequest")
+    local consumeItemResponseRemote = createRemoteEvent("ConsumeItemResponse")
+    
+    -- Server: Create boss spawn RemoteEvent
+    local spawnBossRemote = createRemoteEvent("SpawnBoss")
+    
+    -- Server: Create boss landed RemoteEvent
+    local bossLandedRemote = createRemoteEvent("BossLanded")
+    
     print("Server created DragRequest RemoteFunction") -- Debug
     print("Server created InventoryRequest RemoteFunction") -- Debug
     print("Server created ArmorRequest RemoteFunction") -- Debug
@@ -75,6 +85,16 @@ if RunService:IsServer() then
     
     -- Damage system remotes
     RemoteEvents.ApplyDamage = applyDamageRemote
+    
+    -- Item consumption remotes
+    RemoteEvents.ConsumeItemRequest = consumeItemRequestRemote
+    RemoteEvents.ConsumeItemResponse = consumeItemResponseRemote
+    
+    -- Boss spawn remote
+    RemoteEvents.SpawnBoss = spawnBossRemote
+    
+    -- Boss landed remote
+    RemoteEvents.BossLanded = bossLandedRemote
 else
     -- Client: Wait for the RemoteFunctions to be created by server (existing)
     local dragRequestRemote = ReplicatedStorage:WaitForChild("DragRequest")
@@ -95,6 +115,16 @@ else
     
     -- Client: Wait for damage system RemoteEvents
     local applyDamageRemote = ReplicatedStorage:WaitForChild("ApplyDamage")
+    
+    -- Client: Wait for item consumption RemoteEvents
+    local consumeItemRequestRemote = ReplicatedStorage:WaitForChild("ConsumeItemRequest")
+    local consumeItemResponseRemote = ReplicatedStorage:WaitForChild("ConsumeItemResponse")
+    
+    -- Client: Wait for boss spawn RemoteEvent
+    local spawnBossRemote = ReplicatedStorage:WaitForChild("SpawnBoss")
+    
+    -- Client: Wait for boss landed RemoteEvent
+    local bossLandedRemote = ReplicatedStorage:WaitForChild("BossLanded")
     
     print("Client found DragRequest RemoteFunction") -- Debug
     print("Client found InventoryRequest RemoteFunction") -- Debug
@@ -120,6 +150,16 @@ else
     
     -- Damage system remotes
     RemoteEvents.ApplyDamage = applyDamageRemote
+    
+    -- Item consumption remotes
+    RemoteEvents.ConsumeItemRequest = consumeItemRequestRemote
+    RemoteEvents.ConsumeItemResponse = consumeItemResponseRemote
+    
+    -- Boss spawn remote
+    RemoteEvents.SpawnBoss = spawnBossRemote
+    
+    -- Boss landed remote
+    RemoteEvents.BossLanded = bossLandedRemote
 end
 
 return RemoteEvents 

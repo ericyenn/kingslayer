@@ -15,6 +15,7 @@ ActionConstants.Armor = {
 -- Functional Item Actions (placeholder for future customization)
 ActionConstants.Functional = {
     HEALING_ESSENCE = "healing_essence_action",
+    SUMMONER = "summoner_action",
     DEFAULT = "default_action"
 }
 

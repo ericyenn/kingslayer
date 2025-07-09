@@ -32,6 +32,7 @@ function ItemSpawnSystem:Initialize()
         
         -- Spawn functional items for testing
         self:SpawnItem("healing_essence", Vector3.new(15, 10, 0))
+        self:SpawnItem("summoner", Vector3.new(20, 10, 0))
         
         -- Spawn trading materials for testing
         self:SpawnItem("wood", Vector3.new(-5, 10, 0))

@@ -25,6 +25,11 @@ function InventorySystem:Initialize()
     local SystemManager = require(ReplicatedStorage.Shared.SystemManager)
     SystemManager.RegisterSystem("InventorySystem", self)
     
+    -- Set up consumption response handler
+    RemoteEvents.ConsumeItemResponse.OnClientEvent:Connect(function(success, message, slot)
+        self:HandleConsumeItemResponse(success, message, slot)
+    end)
+    
     -- Independent input connection (separate from DragSystem)
     UserInputService.InputBegan:Connect(function(input, gameProcessed)
         if gameProcessed then return end
@@ -563,6 +568,59 @@ function InventorySystem:UpdateInventoryFromServer(serverInventory)
     _G.PlayerHasEquippedTool = self:HasEquippedTool()
     
     print("Inventory updated from server")
+end
+
+-- Handle consumption response from server
+function InventorySystem:HandleConsumeItemResponse(success, message, slot)
+    print("DEBUG: Received consumption response - success:", success, "message:", message, "slot:", slot)
+    
+    if success then
+        print("DEBUG: Server confirmed consumption, updating client state for slot", slot)
+        
+        local consumedItem = playerInventory[slot]
+        local itemName = consumedItem and consumedItem.itemName or "Unknown Item"
+        
+        -- Remove from local inventory
+        playerInventory[slot] = nil
+        print("DEBUG: Cleared inventory slot", slot)
+        
+        -- Clear equipped slot if this was the equipped item
+        if equippedSlot == slot then
+            equippedSlot = nil
+            print("DEBUG: Cleared equipped slot")
+        end
+        
+        -- Update hotbar UI
+        self:UpdateHotbarUI()
+        print("DEBUG: Updated hotbar UI")
+        
+        -- Update global state
+        _G.PlayerHasEquippedTool = self:HasEquippedTool()
+        print("DEBUG: Updated global state")
+        
+        print("Successfully consumed item:", itemName)
+    else
+        warn("Server rejected item consumption:", message)
+    end
+end
+
+-- Method to consume the currently equipped item (for functional items)
+function InventorySystem:ConsumeEquippedItem()
+    if not equippedSlot or not playerInventory[equippedSlot] then
+        warn("No equipped item to consume")
+        return false
+    end
+    
+    local consumedItem = playerInventory[equippedSlot]
+    print("Consuming equipped item:", consumedItem.itemName, "from slot", equippedSlot)
+    
+    -- Send consumption request to server (fire and forget)
+    print("DEBUG: Sending ConsumeItemRequest to server for slot", equippedSlot)
+    RemoteEvents.ConsumeItemRequest:FireServer(equippedSlot)
+    
+    -- The response will be handled by HandleConsumeItemResponse
+    print("DEBUG: Consumption request sent, waiting for server response")
+    return true -- Always return true since we're using async communication
 end
 
 return InventorySystem 

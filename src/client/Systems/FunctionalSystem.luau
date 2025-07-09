@@ -24,6 +24,29 @@ functionalRegistry:RegisterAction(ActionConstants.Functional.HEALING_ESSENCE, fu
     -- Placeholder - you can customize this action later
 end)
 
+-- Summoner action - spawns boss
+functionalRegistry:RegisterAction(ActionConstants.Functional.SUMMONER, function(player, itemDef, target, actionData)
+    print("🔮 Summoner activated!")
+    print("  - Summoning boss with item:", itemDef.name)
+    
+    local RemoteEvents = require(ReplicatedStorage.Shared.RemoteEvents)
+    local spawnPosition = nil
+    
+    if target then
+        print("  - Summoning boss at target location:", target:GetFullName())
+        spawnPosition = target.Position
+    else
+        print("  - Summoning boss at player location")
+        if player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
+            spawnPosition = player.Character.HumanoidRootPart.Position + Vector3.new(10, 0, 0)
+        end
+    end
+    
+    -- Fire remote event to spawn boss on server
+    RemoteEvents.SpawnBoss:FireServer(spawnPosition)
+    print("  - Boss spawn request sent to server")
+end)
+
 -- Set default action for functional items without specific actions
 functionalRegistry:SetDefaultAction(function(player, itemDef, target, actionData)
     print("⚡ Functional Item Action!")
@@ -59,6 +82,15 @@ function FunctionalSystem:Use(itemDef, player, target)
     
     -- Execute using shared registry
     functionalRegistry:ExecuteAction(actionType, player, itemDef, target, actionData)
+    
+    -- Consume the item after use (functional items are single-use)
+    local InventorySystem = SystemManager.GetSystem("InventorySystem")
+    if InventorySystem then
+        print("FunctionalSystem: Consuming item after use")
+        InventorySystem:ConsumeEquippedItem()
+    else
+        warn("FunctionalSystem: Could not find InventorySystem to consume item")
+    end
 end
 
 -- Legacy methods for backward compatibility

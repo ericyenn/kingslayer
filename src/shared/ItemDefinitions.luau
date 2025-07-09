@@ -135,6 +135,35 @@ ItemDefinitions.items = {
         }
     },
     
+    summoner = {
+        name = "Summoner",
+        description = "A mysterious artifact with summoning powers. Single use item.",
+        model = "SummonerModel",
+        category = Categories.Functional,
+        actionType = ActionConstants.Functional.SUMMONER,
+        actionData = {
+            -- Placeholder data - you can customize this later
+        },
+        components = {
+            Draggable = {
+                force = 7000,
+                maxDistance = 35,
+                dampening = 0.6
+            },
+            Hoverable = {
+                displayName = "Summoner",
+                description = "A mysterious artifact with summoning powers. Single use item.",
+                highlightColor = Color3.fromRGB(128, 0, 128)
+            },
+            Inventoryable = {
+                stackable = false,
+                maxStack = 1,
+                inventoryIcon = "🔮",
+                canPickup = true
+            }
+        }
+    },
+    
     -- ITEMS - No click actions, basic materials
     wood = {
         name = "Wood",

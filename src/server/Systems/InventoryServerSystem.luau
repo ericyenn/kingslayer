@@ -30,6 +30,13 @@ function InventoryServerSystem:Initialize()
         return self:HandleInventoryRequest(player, action, ...)
     end
     
+    -- Set up ConsumeItem handler
+    RemoteEvents.ConsumeItemRequest.OnServerEvent:Connect(function(player, slot)
+        local success, message = self:ConsumeItem(player, slot)
+        -- Send response back to client
+        RemoteEvents.ConsumeItemResponse:FireClient(player, success, message, slot)
+    end)
+    
     -- SIMPLIFIED: No periodic cleanup needed
     
     print("Inventory server system initialized")
@@ -486,6 +493,45 @@ function InventoryServerSystem:RemoveItemBySlot(player, slot)
     playerInventories[player][slot] = nil
     
     return true
+end
+
+-- Method to consume an item from inventory (for functional items)
+function InventoryServerSystem:ConsumeItem(player, slot)
+    -- Validate slot
+    if slot < 1 or slot > 10 then
+        return false, "Invalid slot number"
+    end
+    
+    if not playerInventories[player] then
+        return false, "Player inventory not found"
+    end
+    
+    local inventoryItem = playerInventories[player][slot]
+    if not inventoryItem then
+        return false, "Slot is empty"
+    end
+    
+    print("Server consuming item:", inventoryItem.itemName, "from slot", slot, "for player", player.Name)
+    
+    -- Remove tool from character if this slot is equipped
+    if playerEquippedSlots[player] == slot then
+        self:RemoveToolFromCharacter(player)
+        playerEquippedSlots[player] = nil
+    end
+    
+    -- Destroy the item object completely (it's consumed)
+    if inventoryItem.object and inventoryItem.object.Parent then
+        pcall(function()
+            inventoryItem.object:Destroy()
+        end)
+    end
+    
+    -- Remove from inventory
+    playerInventories[player][slot] = nil
+    
+    print("Successfully consumed item:", inventoryItem.itemName, "for player", player.Name)
+    print("DEBUG: Server returning success=true, message='Item consumed'")
+    return true, "Item consumed"
 end
 
 -- REMOVED: Cleanup function - let Roblox handle object lifecycle
