@@ -21,6 +21,9 @@ export type BossData = {
     landingConnection: RBXScriptConnection?,
     landingTime: number?, -- Track when boss landed for grace period
     inGracePeriod: boolean?, -- Track if boss is in grace period
+    -- ENHANCED: Additional connections for backup landing detection
+    backupLandingConnection: RBXScriptConnection?,
+    forceLandingConnection: thread?,
 }
 
 export type AbilityConfig = {

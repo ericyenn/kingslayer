@@ -4,6 +4,8 @@ local Players = game:GetService("Players")
 
 local BossConfig = require(ReplicatedStorage.Shared.BossConfig)
 local Types = require(ReplicatedStorage.Shared.Types)
+local FrameBudgetManager = require(ReplicatedStorage.Shared.FrameBudgetManager)
+local RemoteEventBatcher = require(ReplicatedStorage.Shared.RemoteEventBatcher)
 
 local OrbitalStrike = {}
 
@@ -31,7 +33,13 @@ local function sendOrbitalStrikeUpdate(phase: string, position: Vector3?, index:
         bossPosition = bossPosition,
     }
     
-    remote:FireAllClients(data)
+    -- PERFORMANCE OPTIMIZATION: Batch circle additions but send strikes immediately
+    if phase == "addCircle" then
+        RemoteEventBatcher.queueEvent(remote, data)
+    else
+        -- Immediate for strikes and cleanup
+        remote:FireAllClients(data)
+    end
 end
 
 local function generateStrikePositions(bossPosition: Vector3, count: number): {Vector3}
@@ -105,46 +113,65 @@ function OrbitalStrike.execute(boss: Types.BossData, targetPlayer: Player?): Typ
         startTime = tick()
     }
     
-    -- Phase 1: Add circles one by one (meteor shower buildup)
-    for i = 1, config.circleCount do
-        print("Adding orbital strike circle", i, "of", config.circleCount)
-        sendOrbitalStrikeUpdate("addCircle", strikePositions[i], i, boss.rootPart.Position)
-        
-        -- Wait between each circle (except after the last one)
-        if i < config.circleCount then
-            task.wait(config.circleInterval)
+    -- NEW APPROACH: Overlapping circle-then-strike pattern
+    print("Starting overlapping meteor shower - circles can strike concurrently")
+    
+    -- Track active strikes for cleanup
+    local activeStrikes = {}
+    
+    -- Spawn circles at regular intervals (independent of strike timing)
+    task.spawn(function()
+        for i = 1, config.circleCount do
+            -- Step 1: Add warning circle
+            print("Adding orbital strike circle", i, "of", config.circleCount)
+            sendOrbitalStrikeUpdate("addCircle", strikePositions[i], i, boss.rootPart.Position)
+            
+            -- Step 2: Spawn independent strike task for this circle
+            local strikeTask = task.spawn(function()
+                -- Wait for strike delay
+                task.wait(config.strikeDelay)
+                
+                -- Fire the strike for this circle
+                print("Firing orbital strike", i, "at position:", strikePositions[i])
+                sendOrbitalStrikeUpdate("fireSingleStrike", strikePositions[i], i, boss.rootPart.Position)
+                
+                -- Deal damage for this specific strike
+                dealSingleStrikeDamage(strikePositions[i], config.damageRadius, config.damage, i)
+                
+                -- Mark this strike as completed
+                activeStrikes[i] = nil
+            end)
+            
+            -- Track this strike
+            activeStrikes[i] = strikeTask
+            
+            -- Step 3: Wait before next circle (allows overlapping)
+            if i < config.circleCount then
+                task.wait(config.circleInterval)
+            end
         end
-    end
-    
-    -- Phase 2: Final warning with all circles visible
-    print("Final warning - all orbital strike circles active")
-    task.wait(config.finalWarningDuration)
-    
-    -- Phase 3: Fire strikes in rapid succession
-    print("Meteor shower begins - firing strikes in sequence")
-    for i = 1, config.circleCount do
-        -- Send strike command to clients
-        sendOrbitalStrikeUpdate("fireSingleStrike", strikePositions[i], i, boss.rootPart.Position)
         
-        -- Deal damage for this specific strike
-        dealSingleStrikeDamage(strikePositions[i], config.damageRadius, config.damage, i)
+        print("All circles spawned, waiting for strikes to complete...")
         
-        -- Wait between strikes (except after the last one)
-        if i < config.circleCount then
-            task.wait(config.strikeInterval)
+        -- Wait for all strikes to complete
+        while next(activeStrikes) do
+            task.wait(0.1) -- Check every 100ms
         end
-    end
+        
+        -- Wait for final beam visuals to finish
+        task.wait(config.beamDuration)
+        
+        -- Final cleanup
+        sendOrbitalStrikeUpdate("cleanup", nil, nil, boss.rootPart.Position)
+        activeOrbitalStrikes[boss] = nil
+        
+        print("Overlapping meteor shower orbital strike completed")
+    end)
     
-    -- Phase 4: Wait for beam visuals then cleanup
-    task.wait(config.beamDuration)
-    sendOrbitalStrikeUpdate("cleanup", nil, nil, boss.rootPart.Position)
-    activeOrbitalStrikes[boss] = nil
-    
-    print("Meteor shower orbital strike completed")
-    
+    -- Calculate new total duration for overlapping strikes:
+    -- Time to spawn all circles + strike delay for last circle + beam duration
     local totalDuration = (config.circleInterval * (config.circleCount - 1)) + 
-                         config.finalWarningDuration + 
-                         (config.strikeInterval * (config.circleCount - 1)) + 
+                         config.strikeDelay + 
                          config.beamDuration
     
     return {

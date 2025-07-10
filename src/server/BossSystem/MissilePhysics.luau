@@ -7,6 +7,8 @@ local TweenService = game:GetService("TweenService")
 
 local BossConfig = require(ReplicatedStorage.Shared.BossConfig)
 local Types = require(ReplicatedStorage.Shared.Types)
+local FrameBudgetManager = require(ReplicatedStorage.Shared.FrameBudgetManager)
+local RemoteEventBatcher = require(ReplicatedStorage.Shared.RemoteEventBatcher)
 
 local MissilePhysics = {}
 
@@ -58,7 +60,13 @@ local function sendMissileUpdate(missileId: string, updateType: string, data: {[
         updateData[key] = value
     end
     
-    remote:FireAllClients(updateData)
+    -- PERFORMANCE OPTIMIZATION: Batch position updates but send critical events immediately
+    if updateType == "update" then
+        RemoteEventBatcher.queueEvent(remote, updateData)
+    else
+        -- Immediate for spawn, explode, destroy
+        remote:FireAllClients(updateData)
+    end
 end
 
 local function calculateSteering(missile: MissileData, deltaTime: number): Vector3
@@ -193,65 +201,85 @@ local function updateMissilePhysics(deltaTime: number)
     local config = BossConfig.abilities.trackingShot
     local currentTime = tick()
     
+    -- PERFORMANCE OPTIMIZATION: Batch missile updates with frame budgeting
+    local missileOperations = {}
+    
     for missileId, missile in pairs(activeMissiles) do
         if not missile.isActive then
             continue
         end
         
-        -- Check lifetime
-        if currentTime - missile.spawnTime > config.missileLifetime then
-            -- Self-destruct
-            createMissileExplosion(missileId, missile.position, nil)
-            missile.isActive = false
-            activeMissiles[missileId] = nil
-            continue
-        end
-        
-        -- Calculate new velocity with realistic steering
-        missile.velocity = calculateSteering(missile, deltaTime)
-        
-        -- Calculate new position
-        local newPosition = missile.position + (missile.velocity * deltaTime)
-        
-        -- Check environment collision
-        local hitEnvironment, hitPosition = checkEnvironmentCollision(missile, newPosition)
-        if hitEnvironment and hitPosition then
-            createMissileExplosion(missileId, hitPosition, nil)
-            missile.isActive = false
-            activeMissiles[missileId] = nil
-            continue
-        end
-        
-        -- Update position
-        missile.position = newPosition
-        
-        -- Check player collision
-        local hitPlayer = checkPlayerCollision(missile)
-        if hitPlayer then
-            print("Missile", missileId, "hit player:", hitPlayer.Name, "at position:", missile.position)
-            createMissileExplosion(missileId, missile.position, hitPlayer)
-            missile.isActive = false
-            activeMissiles[missileId] = nil
-            continue
-        end
-        
-        -- Send periodic updates to clients
-        if currentTime - missile.lastUpdateTime >= (1 / config.updateRate) then
-            sendMissileUpdate(missileId, "update", {
-                position = missile.position,
-                velocity = missile.velocity,
-                targetId = missile.target.UserId
-            })
-            missile.lastUpdateTime = currentTime
-            
-            -- Debug: Print missile position occasionally
-            if math.random() < 0.02 then -- 2% chance (reduced)
-                print("Missile", missileId, "at position:", 
-                    math.floor(missile.position.X), math.floor(missile.position.Y), math.floor(missile.position.Z),
-                    "targeting", missile.target.Name)
+        table.insert(missileOperations, function()
+            -- Check lifetime
+            if currentTime - missile.spawnTime > config.missileLifetime then
+                -- Self-destruct
+                createMissileExplosion(missileId, missile.position, nil)
+                missile.isActive = false
+                activeMissiles[missileId] = nil
+                return
             end
-        end
+            
+            -- Calculate new velocity with realistic steering
+            missile.velocity = calculateSteering(missile, deltaTime)
+            
+            -- Calculate new position
+            local newPosition = missile.position + (missile.velocity * deltaTime)
+            
+            -- Check environment collision (throttle to every other frame if many missiles)
+            local shouldCheckEnvironment = true
+            local missileCount = 0
+            for _ in pairs(activeMissiles) do missileCount += 1 end
+            
+            if missileCount > 3 then
+                -- For performance, only check environment collision every other frame when many missiles
+                shouldCheckEnvironment = (currentTime * 10) % 2 < 1
+            end
+            
+            if shouldCheckEnvironment then
+                local hitEnvironment, hitPosition = checkEnvironmentCollision(missile, newPosition)
+                if hitEnvironment and hitPosition then
+                    createMissileExplosion(missileId, hitPosition, nil)
+                    missile.isActive = false
+                    activeMissiles[missileId] = nil
+                    return
+                end
+            end
+            
+            -- Update position
+            missile.position = newPosition
+            
+            -- Check player collision (always check for fairness)
+            local hitPlayer = checkPlayerCollision(missile)
+            if hitPlayer then
+                print("Missile", missileId, "hit player:", hitPlayer.Name, "at position:", missile.position)
+                createMissileExplosion(missileId, missile.position, hitPlayer)
+                missile.isActive = false
+                activeMissiles[missileId] = nil
+                return
+            end
+            
+            -- Send periodic updates to clients (reduced frequency for performance)
+            local updateFreq = missileCount > 3 and (config.updateRate * 0.6) or config.updateRate
+            if currentTime - missile.lastUpdateTime >= (1 / updateFreq) then
+                sendMissileUpdate(missileId, "update", {
+                    position = missile.position,
+                    velocity = missile.velocity,
+                    targetId = missile.target.UserId
+                })
+                missile.lastUpdateTime = currentTime
+                
+                -- Debug: Print missile position occasionally (reduced frequency)
+                if math.random() < 0.01 then -- 1% chance (reduced from 2%)
+                    print("Missile", missileId, "at position:", 
+                        math.floor(missile.position.X), math.floor(missile.position.Y), math.floor(missile.position.Z),
+                        "targeting", missile.target.Name)
+                end
+            end
+        end)
     end
+    
+    -- Execute missile updates with frame budgeting (max 3 missiles per frame)
+    FrameBudgetManager.executeWithLimit(missileOperations, 3)
     
     -- Clean up finished missiles
     if next(activeMissiles) == nil and missileUpdateConnection then

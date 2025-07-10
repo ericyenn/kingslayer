@@ -6,6 +6,8 @@ local TweenService = game:GetService("TweenService")
 
 local BossConfig = require(ReplicatedStorage.Shared.BossConfig)
 local Types = require(ReplicatedStorage.Shared.Types)
+local FrameBudgetManager = require(ReplicatedStorage.Shared.FrameBudgetManager)
+local RemoteEventBatcher = require(ReplicatedStorage.Shared.RemoteEventBatcher)
 
 local RippleSquares = {}
 
@@ -32,7 +34,13 @@ local function sendRippleUpdate(phase: string, bossPosition: Vector3, squareInde
         squareIndex = squareIndex,
     }
     
-    remote:FireAllClients(data)
+    -- PERFORMANCE OPTIMIZATION: Batch square spawns but send start/cleanup immediately
+    if phase == "spawnSquare" then
+        RemoteEventBatcher.queueEvent(remote, data)
+    else
+        -- Immediate for start/cleanup
+        remote:FireAllClients(data)
+    end
 end
 
 -- Find ground level at boss position
@@ -204,31 +212,40 @@ function RippleSquares.execute(boss: Types.BossData, targetPlayer: Player?): Typ
     -- Tell clients to start the ability
     sendRippleUpdate("start", boss.rootPart.Position)
     
-    -- Spawn expanding squares with timing
+    -- Spawn expanding squares with timing - FRAME BUDGETED
     task.spawn(function()
+        local squareOperations = {}
         for squareIndex = 1, config.maxActiveSquares do
-            print("Spawning expanding square", squareIndex)
-            
-            -- Create server hitbox outline
-            local parts = createSquareOutlineHitbox(boss.rootPart.Position, squareIndex)
-            
-            -- Store square data
-            table.insert(activeRippleSquares[boss].squares, {
-                parts = parts,
-                startTime = tick()
-            })
-            
-            -- Tell clients to spawn visual square
-            sendRippleUpdate("spawnSquare", boss.rootPart.Position, squareIndex)
-            
-            -- Start expansion animation
-            animateSquareExpansion(parts, boss.rootPart.Position, squareIndex)
-            
-            -- Wait before next square (except for the last one)
-            if squareIndex < config.maxActiveSquares then
-                task.wait(config.rippleInterval)
-            end
+            table.insert(squareOperations, function()
+                print("Spawning expanding square", squareIndex)
+                
+                -- Yield to prevent frame drops during part creation
+                FrameBudgetManager.yieldIfNeeded(0.005) -- 5ms estimate for part creation
+                
+                -- Create server hitbox outline
+                local parts = createSquareOutlineHitbox(boss.rootPart.Position, squareIndex)
+                
+                -- Store square data
+                table.insert(activeRippleSquares[boss].squares, {
+                    parts = parts,
+                    startTime = tick()
+                })
+                
+                -- Tell clients to spawn visual square
+                sendRippleUpdate("spawnSquare", boss.rootPart.Position, squareIndex)
+                
+                -- Start expansion animation
+                animateSquareExpansion(parts, boss.rootPart.Position, squareIndex)
+                
+                -- Wait before next square (except for the last one)
+                if squareIndex < config.maxActiveSquares then
+                    task.wait(config.rippleInterval)
+                end
+            end)
         end
+        
+        -- Execute with frame budgeting (max 2 squares per frame to prevent lag)
+        FrameBudgetManager.executeWithLimit(squareOperations, 2)
         
         -- Wait for all squares to finish expanding and disappear
         task.wait(config.expansionDuration + 0.5)

@@ -4,9 +4,11 @@ local AudioSystem = {}
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local SoundService = game:GetService("SoundService")
+local ContentProvider = game:GetService("ContentProvider")
 
 local RemoteEvents = require(ReplicatedStorage.Shared.RemoteEvents)
 local SystemManager = require(ReplicatedStorage.Shared.SystemManager)
+local FrameBudgetManager = require(ReplicatedStorage.Shared.FrameBudgetManager)
 
 local player = Players.LocalPlayer
 
@@ -43,6 +45,24 @@ local AUDIO_CONFIG = {
 -- Sound cache to avoid creating new sounds every time
 local soundCache = {}
 
+-- PERFORMANCE OPTIMIZATION: Sound pooling for frequently used sounds
+local soundPools = {}
+local poolSizes = {
+    hit_success = 5,    -- Multiple hit sounds can play simultaneously
+    swing_miss = 3,     -- Multiple swings possible
+    typewriter = 2,     -- Dialogue sounds
+    critical_hit = 3,   -- Critical effects
+    timing_success = 2  -- Timing feedback
+}
+
+-- Preloading status tracking
+local preloadingStatus = {
+    isPreloading = false,
+    totalSounds = 0,
+    loadedSounds = 0,
+    failedSounds = 0
+}
+
 function AudioSystem:Initialize()
     -- Register with SystemManager
     SystemManager.RegisterSystem("AudioSystem", self)
@@ -59,24 +79,137 @@ function AudioSystem:Initialize()
 end
 
 function AudioSystem:PreloadSounds()
-    -- Pre-load critical sounds
-    for soundName, soundId in pairs(AUDIO_CONFIG.CRITICAL_SOUNDS) do
-        if type(soundId) == "table" then
-            -- Handle arrays of sound IDs (like hit_success)
-            for i, id in ipairs(soundId) do
-                self:GetOrCreateSound(soundName .. "_" .. i, id)
+    preloadingStatus.isPreloading = true
+    preloadingStatus.totalSounds = 0
+    preloadingStatus.loadedSounds = 0
+    preloadingStatus.failedSounds = 0
+    
+    -- PERFORMANCE OPTIMIZATION: Async sound preloading with frame budgeting
+    task.spawn(function()
+        local loadOperations = {}
+        
+        -- Prepare all sound loading operations
+        for soundName, soundId in pairs(AUDIO_CONFIG.CRITICAL_SOUNDS) do
+            if type(soundId) == "table" then
+                -- Handle arrays of sound IDs (like hit_success)
+                for i, id in ipairs(soundId) do
+                    local finalSoundName = soundName .. "_" .. i
+                    table.insert(loadOperations, function()
+                        self:AsyncLoadSound(finalSoundName, id)
+                    end)
+                    preloadingStatus.totalSounds += 1
+                end
+            else
+                table.insert(loadOperations, function()
+                    self:AsyncLoadSound(soundName, soundId)
+                end)
+                preloadingStatus.totalSounds += 1
             end
+        end
+        
+        -- Pre-load dialogue sounds
+        for soundName, soundId in pairs(AUDIO_CONFIG.DIALOGUE_SOUNDS) do
+            table.insert(loadOperations, function()
+                self:AsyncLoadSound(soundName, soundId)
+            end)
+            preloadingStatus.totalSounds += 1
+        end
+        
+        -- Execute loading with frame budgeting (max 2 sounds per frame)
+        FrameBudgetManager.executeWithLimit(loadOperations, 2)
+        
+        -- Initialize sound pools after loading
+        self:InitializeSoundPools()
+        
+        preloadingStatus.isPreloading = false
+        print("AudioSystem: Async preloading complete -", 
+              preloadingStatus.loadedSounds, "loaded,", 
+              preloadingStatus.failedSounds, "failed")
+    end)
+end
+
+function AudioSystem:AsyncLoadSound(soundName, soundId)
+    -- Create the sound first
+    local sound = Instance.new("Sound")
+    sound.Name = soundName
+    sound.SoundId = soundId
+    sound.Volume = AUDIO_CONFIG.CRITICAL_VOLUME * AUDIO_CONFIG.MASTER_VOLUME
+    sound.Parent = SoundService
+    
+    -- Cache immediately for access
+    soundCache[soundName] = sound
+    
+    -- Async load the content
+    task.spawn(function()
+        local success, errorMsg = pcall(function()
+            ContentProvider:PreloadAsync({sound})
+        end)
+        
+        if success then
+            preloadingStatus.loadedSounds += 1
+            print("AudioSystem: Preloaded", soundName)
         else
-            self:GetOrCreateSound(soundName, soundId)
+            preloadingStatus.failedSounds += 1
+            warn("AudioSystem: Failed to preload", soundName, ":", errorMsg)
+        end
+    end)
+end
+
+function AudioSystem:InitializeSoundPools()
+    -- PERFORMANCE OPTIMIZATION: Create sound pools for frequently used sounds
+    for soundName, poolSize in pairs(poolSizes) do
+        if not soundPools[soundName] then
+            soundPools[soundName] = {
+                available = {},
+                inUse = {},
+                maxSize = poolSize
+            }
+            
+            -- Create initial pool
+            for i = 1, poolSize do
+                local pooledSound = self:CreatePooledSound(soundName)
+                if pooledSound then
+                    table.insert(soundPools[soundName].available, pooledSound)
+                end
+            end
+            
+            print("AudioSystem: Created sound pool for", soundName, "with", #soundPools[soundName].available, "sounds")
+        end
+    end
+end
+
+function AudioSystem:CreatePooledSound(baseSoundName)
+    -- Find the base sound in cache
+    local baseSound = soundCache[baseSoundName]
+    if not baseSound then
+        -- Try to find a numbered variant (like hit_success_1)
+        for cachedName, cachedSound in pairs(soundCache) do
+            if cachedName:match("^" .. baseSoundName .. "_") then
+                baseSound = cachedSound
+                break
+            end
         end
     end
     
-    -- Pre-load dialogue sounds
-    for soundName, soundId in pairs(AUDIO_CONFIG.DIALOGUE_SOUNDS) do
-        self:GetOrCreateSound(soundName, soundId)
+    if not baseSound then
+        warn("AudioSystem: Could not find base sound for pool:", baseSoundName)
+        return nil
     end
     
-    print("AudioSystem: Pre-loaded", self:GetCachedSoundCount(), "sounds")
+    -- Create pooled sound with same properties
+    local pooledSound = Instance.new("Sound")
+    pooledSound.Name = baseSoundName .. "_pooled_" .. tostring(math.random(1000, 9999))
+    pooledSound.SoundId = baseSound.SoundId
+    pooledSound.Volume = baseSound.Volume
+    pooledSound.PlaybackSpeed = baseSound.PlaybackSpeed
+    pooledSound.Parent = SoundService
+    
+    -- Return to pool when finished
+    pooledSound.Ended:Connect(function()
+        self:ReturnSoundToPool(baseSoundName, pooledSound)
+    end)
+    
+    return pooledSound
 end
 
 function AudioSystem:GetOrCreateSound(soundName, soundId)
@@ -98,6 +231,74 @@ function AudioSystem:GetOrCreateSound(soundName, soundId)
     return sound
 end
 
+-- PERFORMANCE OPTIMIZATION: Sound pooling methods
+function AudioSystem:GetPooledSound(soundName)
+    local pool = soundPools[soundName]
+    if not pool then
+        -- No pool for this sound, use regular method
+        return self:GetOrCreateSound(soundName, nil)
+    end
+    
+    -- Get available sound from pool
+    if #pool.available > 0 then
+        local sound = table.remove(pool.available)
+        table.insert(pool.inUse, sound)
+        return sound
+    end
+    
+    -- Pool exhausted, create new sound if under limit
+    if #pool.inUse < pool.maxSize * 2 then -- Allow 2x expansion under load
+        local newSound = self:CreatePooledSound(soundName)
+        if newSound then
+            table.insert(pool.inUse, newSound)
+            return newSound
+        end
+    end
+    
+    -- Fallback to cached sound (may cause audio overlap)
+    warn("AudioSystem: Pool exhausted for", soundName, "- using cached sound")
+    return soundCache[soundName]
+end
+
+function AudioSystem:ReturnSoundToPool(soundName, sound)
+    local pool = soundPools[soundName]
+    if not pool then return end
+    
+    -- Remove from in-use
+    for i, inUseSound in ipairs(pool.inUse) do
+        if inUseSound == sound then
+            table.remove(pool.inUse, i)
+            break
+        end
+    end
+    
+    -- Add back to available if pool not full
+    if #pool.available < pool.maxSize then
+        table.insert(pool.available, sound)
+    else
+        -- Pool full, destroy excess sound
+        sound:Destroy()
+    end
+end
+
+-- Enhanced play method with pooling
+function AudioSystem:PlayPooledSound(soundName, volume, pitch)
+    volume = volume or AUDIO_CONFIG.CRITICAL_VOLUME
+    pitch = pitch or 1.0
+    
+    local sound = self:GetPooledSound(soundName)
+    if not sound then
+        warn("AudioSystem: Could not get sound:", soundName)
+        return
+    end
+    
+    sound.Volume = volume * AUDIO_CONFIG.MASTER_VOLUME
+    sound.PlaybackSpeed = pitch
+    sound:Play()
+    
+    return sound
+end
+
 
 
 function AudioSystem:PlaySound(soundName, soundId, volume, pitch)
@@ -111,57 +312,27 @@ function AudioSystem:PlaySound(soundName, soundId, volume, pitch)
 end
 
 function AudioSystem:PlayCriticalTimingSuccess()
-    -- Play the timing success sound when indicator hits critical zone
-    local soundId = AUDIO_CONFIG.CRITICAL_SOUNDS.timing_success
-    local sound = self:GetOrCreateSound("timing_success", soundId)
-    
-    -- Normal pitch for timing success
-    sound.Volume = AUDIO_CONFIG.CRITICAL_VOLUME * AUDIO_CONFIG.MASTER_VOLUME
-    sound.PlaybackSpeed = 1.0 -- Normal pitch
-    sound:Play()
-    
+    -- PERFORMANCE OPTIMIZATION: Use pooled sound
+    self:PlayPooledSound("timing_success", AUDIO_CONFIG.CRITICAL_VOLUME, 1.0)
     print("AudioSystem: Played critical timing success sound")
 end
 
 function AudioSystem:PlayCriticalHitSound()
-    -- Play the critical hit impact sound
-    local soundId = AUDIO_CONFIG.CRITICAL_SOUNDS.critical_hit
-    local sound = self:GetOrCreateSound("critical_hit", soundId)
-    
-    -- Normal pitch for critical hit
-    sound.Volume = AUDIO_CONFIG.CRITICAL_VOLUME * AUDIO_CONFIG.MASTER_VOLUME
-    sound.PlaybackSpeed = 1.0 -- Normal pitch
-    sound:Play()
-    
+    -- PERFORMANCE OPTIMIZATION: Use pooled sound
+    self:PlayPooledSound("critical_hit", AUDIO_CONFIG.CRITICAL_VOLUME, 1.0)
     print("AudioSystem: Played critical hit impact sound")
 end
 
 function AudioSystem:PlaySwingMissSound()
-    -- Play the swing miss sound when tool swings but doesn't hit anything
-    local soundId = AUDIO_CONFIG.CRITICAL_SOUNDS.swing_miss
-    local sound = self:GetOrCreateSound("swing_miss", soundId)
-    
-    sound.Volume = AUDIO_CONFIG.CRITICAL_VOLUME * AUDIO_CONFIG.MASTER_VOLUME
-    sound.PlaybackSpeed = 1.0
-    sound:Play()
-    
+    -- PERFORMANCE OPTIMIZATION: Use pooled sound
+    self:PlayPooledSound("swing_miss", AUDIO_CONFIG.CRITICAL_VOLUME, 1.0)
     print("AudioSystem: Played swing miss sound")
 end
 
 function AudioSystem:PlayHitSuccessSound()
-    -- Play a random hit success sound
-    local soundIds = AUDIO_CONFIG.CRITICAL_SOUNDS.hit_success
-    local randomIndex = math.random(1, #soundIds)
-    local soundId = soundIds[randomIndex]
-    local soundName = "hit_success_" .. randomIndex
-    
-    local sound = self:GetOrCreateSound(soundName, soundId)
-    
-    sound.Volume = AUDIO_CONFIG.CRITICAL_VOLUME * AUDIO_CONFIG.MASTER_VOLUME
-    sound.PlaybackSpeed = 1.0
-    sound:Play()
-    
-    print("AudioSystem: Played hit success sound", randomIndex)
+    -- PERFORMANCE OPTIMIZATION: Use pooled sound with random selection
+    self:PlayPooledSound("hit_success", AUDIO_CONFIG.CRITICAL_VOLUME, 1.0)
+    print("AudioSystem: Played hit success sound")
 end
 
 -- Dialogue Sound Methods
@@ -176,38 +347,22 @@ function AudioSystem:PlayTextAdvanceSound()
         return -- Skip this sound to prevent spam
     end
     
-    local soundId = AUDIO_CONFIG.DIALOGUE_SOUNDS.typewriter
-    local sound = self:GetOrCreateSound("typewriter", soundId)
-    
-    sound.Volume = AUDIO_CONFIG.DIALOGUE_VOLUME * AUDIO_CONFIG.MASTER_VOLUME
-    sound.PlaybackSpeed = 1.0
-    sound:Play()
+    -- PERFORMANCE OPTIMIZATION: Use pooled sound
+    self:PlayPooledSound("typewriter", AUDIO_CONFIG.DIALOGUE_VOLUME, 1.0)
     
     lastTypewriterSoundTime = currentTime
     print("AudioSystem: Played text advance sound")
 end
 
 function AudioSystem:PlayInstantRevealSound()
-    -- Play sound when text is instantly revealed
-    local soundId = AUDIO_CONFIG.DIALOGUE_SOUNDS.instant_reveal
-    local sound = self:GetOrCreateSound("instant_reveal", soundId)
-    
-    sound.Volume = AUDIO_CONFIG.DIALOGUE_VOLUME * AUDIO_CONFIG.MASTER_VOLUME
-    sound.PlaybackSpeed = 1.0
-    sound:Play()
-    
+    -- PERFORMANCE OPTIMIZATION: Use pooled sound
+    self:PlayPooledSound("instant_reveal", AUDIO_CONFIG.DIALOGUE_VOLUME, 1.0)
     print("AudioSystem: Played instant reveal sound")
 end
 
 function AudioSystem:PlayChoiceHoverSound()
-    -- Play sound when hovering over dialogue choices
-    local soundId = AUDIO_CONFIG.DIALOGUE_SOUNDS.choice_hover
-    local sound = self:GetOrCreateSound("choice_hover", soundId)
-    
-    sound.Volume = AUDIO_CONFIG.DIALOGUE_VOLUME * AUDIO_CONFIG.MASTER_VOLUME
-    sound.PlaybackSpeed = 1.0
-    sound:Play()
-    
+    -- PERFORMANCE OPTIMIZATION: Use pooled sound
+    self:PlayPooledSound("choice_hover", AUDIO_CONFIG.DIALOGUE_VOLUME, 1.0)
     print("AudioSystem: Played choice hover sound")
 end
 
@@ -245,7 +400,64 @@ function AudioSystem:ClearSoundCache()
         sound:Destroy()
     end
     soundCache = {}
-    print("AudioSystem: Cleared sound cache")
+    
+    -- Also clear sound pools
+    for _, pool in pairs(soundPools) do
+        for _, sound in pairs(pool.available) do
+            sound:Destroy()
+        end
+        for _, sound in pairs(pool.inUse) do
+            sound:Destroy()
+        end
+    end
+    soundPools = {}
+    
+    print("AudioSystem: Cleared sound cache and pools")
+end
+
+-- PERFORMANCE OPTIMIZATION: Status and diagnostics methods
+function AudioSystem:GetPreloadingStatus()
+    return {
+        isPreloading = preloadingStatus.isPreloading,
+        progress = preloadingStatus.totalSounds > 0 and 
+                  (preloadingStatus.loadedSounds / preloadingStatus.totalSounds) or 0,
+        loaded = preloadingStatus.loadedSounds,
+        failed = preloadingStatus.failedSounds,
+        total = preloadingStatus.totalSounds
+    }
+end
+
+function AudioSystem:GetPoolStatus()
+    local status = {}
+    for soundName, pool in pairs(soundPools) do
+        status[soundName] = {
+            available = #pool.available,
+            inUse = #pool.inUse,
+            maxSize = pool.maxSize
+        }
+    end
+    return status
+end
+
+function AudioSystem:PrintDiagnostics()
+    local preloadStatus = self:GetPreloadingStatus()
+    local poolStatus = self:GetPoolStatus()
+    
+    print("=== AudioSystem Diagnostics ===")
+    print("Preloading:", preloadStatus.isPreloading and "IN PROGRESS" or "COMPLETE")
+    print("Sounds loaded:", preloadStatus.loaded .. "/" .. preloadStatus.total)
+    if preloadStatus.failed > 0 then
+        print("Failed sounds:", preloadStatus.failed)
+    end
+    
+    print("\nSound Pools:")
+    for soundName, status in pairs(poolStatus) do
+        print("  " .. soundName .. ": " .. status.available .. " available, " .. 
+              status.inUse .. " in use (max: " .. status.maxSize .. ")")
+    end
+    
+    print("Total cached sounds:", self:GetCachedSoundCount())
+    print("===============================")
 end
 
 return AudioSystem 

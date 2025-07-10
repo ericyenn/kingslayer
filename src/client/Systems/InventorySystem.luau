@@ -7,6 +7,8 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local RemoteEvents = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("RemoteEvents"))
 local ECS = require(ReplicatedStorage.Shared.ECS)
+local InventoryPredictor = require(ReplicatedStorage.Shared.InventoryPredictor)
+local UIBatcher = require(ReplicatedStorage.Shared.UIBatcher)
 
 local player = Players.LocalPlayer
 
@@ -114,43 +116,76 @@ function InventorySystem:PickupToInventory(object)
         return
     end
     
-    -- Request pickup from server
-    local success, result, message, icon = pcall(function()
-        return RemoteEvents.InventoryRequest:InvokeServer("pickup_to_inventory", object, emptySlot)
-    end)
+    -- PERFORMANCE OPTIMIZATION: Use client-side prediction for instant feedback
+    local predictionId, predictionResult = InventoryPredictor.predict("pickup_to_inventory", object, emptySlot)
     
-    if not success then
-        warn("InventoryRequest call failed:", result)
-        return
-    end
-    
-    local serverSuccess, serverMessage, serverIcon = result, message, icon
-    
-    if serverSuccess then
-        -- Get itemId from object name
+    if predictionId then
+        -- Apply prediction immediately
         local itemId = self:GetItemIdFromObject(object)
-        
-        -- Add to local inventory with itemId
         local inventoryItem = {
             object = object,
             itemName = object.Name,
-            itemId = itemId,  -- Add the missing itemId
-            icon = serverIcon -- Use icon from server response
+            itemId = itemId,
+            icon = self:GetItemIcon(itemId), -- Temporary icon
+            predicted = true,
+            predictionId = predictionId
         }
         
-        -- Store item in local inventory
+        -- Store item in local inventory immediately
         playerInventory[emptySlot] = inventoryItem
         
-        -- Update hotbar UI (no auto-equipping)
+        -- Update UI immediately
         self:UpdateHotbarUI()
         
-        -- Update global state for DragSystem (avoid circular dependency)
+        -- Update global state
         _G.PlayerHasEquippedTool = self:HasEquippedTool()
         
-        print("Successfully picked up to inventory:", object.Name, "in slot", emptySlot)
-    else
-        warn("Failed to pickup to inventory:", serverMessage)
+        print("Predicted pickup:", object.Name, "in slot", emptySlot)
     end
+    
+    -- Send async request to server (no blocking)
+    task.spawn(function()
+        local success, result, message, icon = pcall(function()
+            return RemoteEvents.InventoryRequest:InvokeServer("pickup_to_inventory", object, emptySlot)
+        end)
+        
+        if not success then
+            warn("InventoryRequest call failed:", result)
+            if predictionId then
+                InventoryPredictor.rollback(predictionId, "Network error")
+                self:UpdateHotbarUI()
+            end
+            return
+        end
+        
+        local serverSuccess, serverMessage, serverIcon = result, message, icon
+        
+        if serverSuccess then
+            -- Confirm prediction
+            if predictionId then
+                InventoryPredictor.confirm(predictionId)
+                
+                -- Update with server data
+                if playerInventory[emptySlot] and playerInventory[emptySlot].predictionId == predictionId then
+                    playerInventory[emptySlot].icon = serverIcon
+                    playerInventory[emptySlot].predicted = nil
+                    playerInventory[emptySlot].predictionId = nil
+                    self:UpdateHotbarUI()
+                end
+            end
+            
+            print("Server confirmed pickup:", object.Name, "in slot", emptySlot)
+        else
+            -- Server rejected, rollback prediction
+            if predictionId then
+                InventoryPredictor.rollback(predictionId, serverMessage)
+                playerInventory[emptySlot] = nil
+                self:UpdateHotbarUI()
+                _G.PlayerHasEquippedTool = self:HasEquippedTool()
+            end
+            warn("Server rejected pickup:", serverMessage)
+        end
+    end)
 end
 
 function InventorySystem:DropFromInventory(slot)
@@ -214,8 +249,11 @@ function InventorySystem:EquipSlot(slot)
 end
 
 function InventorySystem:UpdateHotbarUI()
-    local Hotbar = require(script.Parent.Parent.UI.Hotbar)
-    Hotbar:UpdateDisplay(playerInventory, equippedSlot)
+    -- PERFORMANCE OPTIMIZATION: Batch UI updates to prevent frame drops
+    UIBatcher.queueHotbarUpdate(function()
+        local Hotbar = require(script.Parent.Parent.UI.Hotbar)
+        Hotbar:UpdateDisplay(playerInventory, equippedSlot)
+    end, 2) -- Medium priority
 end
 
 function InventorySystem:GetInventory()

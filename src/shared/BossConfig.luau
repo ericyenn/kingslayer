@@ -70,19 +70,18 @@ local BossConfig = {
         },
         
         orbitalStrike = {
-            circleCount = 5,             -- Number of strike circles
-            circleInterval = 0.3,        -- Time between each circle appearing
-            finalWarningDuration = 0.5,  -- Pause with all circles visible
-            strikeInterval = 0.2,        -- Time between each beam firing
+            circleCount = 15,            -- Number of strike circles (increased to 15)
+            circleInterval = 0.75,       -- Time between each circle appearing (faster for overlapping strikes)
+            strikeDelay = 0.5,           -- Time from circle appearance to strike (NEW: replaces finalWarningDuration)
             damage = 75,                 -- Strike damage
-            damageRadius = 6,            -- Damage radius for each circle
-            visualRadius = 8,            -- Visual circle/beam radius
-            beamDuration = 1,            -- How long beams last
+            damageRadius = 10,           -- Damage radius for each circle (increased from 6)
+            visualRadius = 12,           -- Visual circle/beam radius (increased from 8)
+            beamDuration = 0.5,          -- How long beams last (reduced from 1.0 to 0.5 seconds)
             cooldownAfter = 2,           -- Seconds before next action
             
-            -- Strike area settings
-            minDistance = 10,            -- Minimum distance from boss
-            maxDistance = 30,            -- Maximum distance from boss
+            -- Strike area settings (expanded radius)
+            minDistance = 15,            -- Minimum distance from boss (increased)
+            maxDistance = 60,            -- Maximum distance from boss (doubled)
             
             -- Visual settings
             circleColor = Color3.new(1, 0, 0),  -- Red warning circles
@@ -97,7 +96,7 @@ local BossConfig = {
             outlineThickness = 2,                       -- How thick the square outline parts are
             
             -- Ripple timing (more spacing between squares)
-            rippleInterval = 2.0,                       -- New square every 2 seconds (much more spacing)
+            rippleInterval = 3.0,                       -- New square every 3 seconds (increased spacing)
             maxActiveSquares = 4,                       -- Max squares expanding at once
             
             -- Visual settings (client-side styling)
@@ -131,7 +130,7 @@ local BossConfig = {
     
     -- TIMING SETTINGS
     timing = {
-        globalCooldown = 2,              -- Base cooldown between any actions
+        globalCooldown = 8,              -- Base cooldown between any actions (further increased for more spacing)
         attackStartDelay = 1,            -- Delay before starting attacks
         sequenceRestartDelay = 3,        -- Delay before restarting sequence
         vulnerabilityDuration = 5,       -- Seconds boss is vulnerable after each attack

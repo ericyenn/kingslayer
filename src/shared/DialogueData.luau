@@ -7,7 +7,7 @@ local DialogueData = {}
 DialogueData.NPCDialogues = {
 	-- Wise Man NPC - Changes based on quest state
 	wise_man_default = {
-		text = "Welcome, seeker of knowledge. What wisdom do you seek?\n\n• [Request Quest] - I seek purpose and adventure\n• [Learn Ancient Lore] - Tell me of the old days\n• [Depart] - Thank you for your time, wise one",
+		text = "Welcome, I am Gary. What wisdom do you seek?\n\n• [Request Quest] - Why are we here?\n• [Learn Ancient Lore] - What is this land?\n• [Depart] - Thank you for your time, wise one",
 		actions = {"start_quest", "show_lore", "goodbye"}
 	},
 	
@@ -38,7 +38,7 @@ DialogueData.NPCDialogues = {
 -- Response dialogues that replace the old overhead text system
 DialogueData.ResponseDialogues = {
 	start_quest = {
-		text = "A princess lies trapped by dark magic! Find her in the tower and break the curse!",
+		text = "My daughter, Ella, was kidnapped by an evil god. They call him the uncrowned king. Bring her back and I shall teach you how to return to your world.",
 		actions = {}
 	},
 	show_lore = {

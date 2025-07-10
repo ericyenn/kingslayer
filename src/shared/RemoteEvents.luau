@@ -61,6 +61,9 @@ if RunService:IsServer() then
     -- Server: Create boss landed RemoteEvent
     local bossLandedRemote = createRemoteEvent("BossLanded")
     
+    -- Server: Create boss health update RemoteEvent
+    local bossHealthUpdateRemote = createRemoteEvent("BossHealthUpdate")
+    
     print("Server created DragRequest RemoteFunction") -- Debug
     print("Server created InventoryRequest RemoteFunction") -- Debug
     print("Server created ArmorRequest RemoteFunction") -- Debug
@@ -95,6 +98,9 @@ if RunService:IsServer() then
     
     -- Boss landed remote
     RemoteEvents.BossLanded = bossLandedRemote
+    
+    -- Boss health update remote
+    RemoteEvents.BossHealthUpdate = bossHealthUpdateRemote
 else
     -- Client: Wait for the RemoteFunctions to be created by server (existing)
     local dragRequestRemote = ReplicatedStorage:WaitForChild("DragRequest")
@@ -125,6 +131,9 @@ else
     
     -- Client: Wait for boss landed RemoteEvent
     local bossLandedRemote = ReplicatedStorage:WaitForChild("BossLanded")
+    
+    -- Client: Wait for boss health update RemoteEvent
+    local bossHealthUpdateRemote = ReplicatedStorage:WaitForChild("BossHealthUpdate")
     
     print("Client found DragRequest RemoteFunction") -- Debug
     print("Client found InventoryRequest RemoteFunction") -- Debug
@@ -160,6 +169,9 @@ else
     
     -- Boss landed remote
     RemoteEvents.BossLanded = bossLandedRemote
+    
+    -- Boss health update remote
+    RemoteEvents.BossHealthUpdate = bossHealthUpdateRemote
 end
 
 return RemoteEvents 

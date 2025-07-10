@@ -7,6 +7,7 @@ local TweenService = game:GetService("TweenService")
 local BossConfig = require(ReplicatedStorage.Shared.BossConfig)
 local Types = require(ReplicatedStorage.Shared.Types)
 local MissilePhysics = require(script.Parent.Parent.MissilePhysics)
+local RemoteEventBatcher = require(ReplicatedStorage.Shared.RemoteEventBatcher)
 
 local TrackingShot = {}
 
@@ -40,7 +41,13 @@ local function sendLaserUpdate(phase: string, targetPlayer: Player?, bossPositio
         end
     end
     
-    remote:FireAllClients(data)
+    -- PERFORMANCE OPTIMIZATION: Use batching for non-critical updates
+    if phase == "tracking" or phase == "lockOnAttempt" then
+        RemoteEventBatcher.queueEvent(remote, data)
+    else
+        -- Critical events (lock success/fail, missile launch) send immediately
+        remote:FireAllClients(data)
+    end
 end
 
 local function checkLineOfSight(bossPosition: Vector3, targetPosition: Vector3, targetPlayer: Player): boolean

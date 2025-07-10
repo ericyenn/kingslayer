@@ -130,10 +130,11 @@ function NPCManager:CreateNPCModel(npcId)
 	local rootPart = model:FindFirstChild("HumanoidRootPart")
 	if rootPart then
 		local prompt = Instance.new("ProximityPrompt")
-		prompt.ActionText = "Talk"
-		prompt.ObjectText = npcId:gsub("_", " "):gsub("(%a)([%w_']*)", function(first, rest) return first:upper()..rest end)
+		prompt.ActionText = "" -- No text shown on prompt
+		prompt.ObjectText = "" -- No object text shown
 		prompt.MaxActivationDistance = 10
 		prompt.RequiresLineOfSight = false
+		prompt.HoldDuration = 0.5 -- Require 0.5 second hold
 		prompt.Parent = rootPart
 	end
 	
