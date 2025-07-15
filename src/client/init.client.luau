@@ -269,7 +269,7 @@ local function setupBossConnections()
             -- Trigger screen shake
             local cameraSystem = _G.CameraSystem
             if cameraSystem then
-                cameraSystem:StartShake(3.0, 3.0, 30)
+                cameraSystem:StartShake(3.0, 1.0, 30)
             else
                 warn("CameraSystem not found for screen shake")
             end

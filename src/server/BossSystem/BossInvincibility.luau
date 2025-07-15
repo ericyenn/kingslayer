@@ -95,7 +95,6 @@ end
 local function healBoss(boss: Types.BossData, amount: number)
     local newHealth = math.min(boss.health + amount, boss.maxHealth)
     boss.health = newHealth
-    boss.humanoid.Health = newHealth
     
     print("Boss healed for", amount, "health. Current health:", newHealth)
 end

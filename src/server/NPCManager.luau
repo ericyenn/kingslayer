@@ -36,34 +36,37 @@ local spawnPositions = {
 
 -- Create a simple NPC model
 function NPCManager:CreateNPCModel(npcId)
-	-- You'll need to have a "PlayerModel" in ServerStorage as a template
-	-- Insert an R15 or R6 Dummy from the toolbox into ServerStorage and rename it to "PlayerModel"
 	local ServerStorage = game:GetService("ServerStorage")
-	local template = ServerStorage:FindFirstChild("PlayerModel")
+	local npcModelsFolder = ServerStorage:FindFirstChild("NPCModels")
+	local template = npcModelsFolder and npcModelsFolder:FindFirstChild(npcId)
 	
+	-- Fallback to old PlayerModel system if specific model not found
 	if not template then
-		warn("PlayerModel template not found in ServerStorage!")
-		warn("Please add an R15 or R6 Dummy from the toolbox to ServerStorage and rename it to 'PlayerModel'")
-		warn("This is required for NPCs to have proper animations!")
-		
-		-- Fallback: Create a basic model (but animations won't work)
-		local model = Instance.new("Model")
-		model.Name = npcId
-		
-		local part = Instance.new("Part")
-		part.Name = "HumanoidRootPart"
-		part.Size = Vector3.new(2, 5, 1)
-		part.Position = spawnPositions[npcId]
-		part.Anchored = true
-		part.CanCollide = false
-		part.Parent = model
-		
-		-- Add basic Humanoid (but no animations)
-		local humanoid = Instance.new("Humanoid")
-		humanoid.Parent = model
-		
-		warn("Created basic NPC without animations. Add PlayerModel template for full functionality!")
-		return model
+		template = ServerStorage:FindFirstChild("PlayerModel")
+		if not template then
+			warn("No model found for NPC:", npcId)
+			warn("Please add an R15 or R6 Dummy from the toolbox to ServerStorage and rename it to 'PlayerModel'")
+			warn("This is required for NPCs to have proper animations!")
+			
+			-- Fallback: Create a basic model (but animations won't work)
+			local model = Instance.new("Model")
+			model.Name = npcId
+			
+			local part = Instance.new("Part")
+			part.Name = "HumanoidRootPart"
+			part.Size = Vector3.new(2, 5, 1)
+			part.Position = spawnPositions[npcId]
+			part.Anchored = true
+			part.CanCollide = false
+			part.Parent = model
+			
+			-- Add basic Humanoid (but no animations)
+			local humanoid = Instance.new("Humanoid")
+			humanoid.Parent = model
+			
+			warn("Created basic NPC without animations. Add PlayerModel template for full functionality!")
+			return model
+		end
 	end
 	
 	-- Clone the player model template

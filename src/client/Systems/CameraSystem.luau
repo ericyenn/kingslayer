@@ -10,9 +10,6 @@ local player = Players.LocalPlayer
 local playerGui = player:WaitForChild("PlayerGui")
 local camera = workspace.CurrentCamera
 
--- ENHANCED: Proper time tracking using os.clock()
-local lastUpdateTime = os.clock()
-
 -- Crosshair UI elements
 local crosshairGui = nil
 
@@ -37,9 +34,6 @@ local int = 5
 local int2 = 5
 local vect3 = Vector3.new()
 
--- ENHANCED: Proper time tracking for smooth bobbing
-local bobbingTime = 0
-
 -- Camera sway variables
 local Turn = 0
 
@@ -61,24 +55,31 @@ local function calculateMovementBobbing(deltaTime, humanoid)
     local rootPart = humanoid.RootPart
     local rootMagnitude = rootPart and Vector3.new(rootPart.Velocity.X, 0, rootPart.Velocity.Z).Magnitude or 0
     
-    -- ENHANCED: Smooth movement-based bobbing calculations without FPS dependency
-    if rootMagnitude > 0.5 then
-        -- Update bobbing time for smooth, frame-rate independent animation
-        bobbingTime = bobbingTime + deltaTime * 14 -- 14 is the bobbing frequency
-        
-        -- Calculate vertical bobbing using accumulated time instead of tick()
-        func1 = lerp(func1, math.cos(bobbingTime) * 0.25, 0.08 * math.min(deltaTime * 60, 1))
-        func2 = lerp(func2, math.cos(bobbingTime * 0.9) * 0.15, 0.08 * math.min(deltaTime * 60, 1))
+    -- Smooth deltaTime scaling for consistent bobbing
+    local scaledDeltaTime = math.min(deltaTime * 30, 2) -- Cap scaled deltaTime to prevent spikes
+    
+    -- Handle delta time spikes and movement-based bobbing calculations
+    if scaledDeltaTime > 1.5 then
+        func1 = lerp(func1, 0, 0.1)
+        func2 = lerp(func2, 0, 0.1)
     else
-        -- Gradually reduce bobbing when stationary
-        func1 = lerp(func1, 0, 0.1 * math.min(deltaTime * 60, 1))
-        func2 = lerp(func2, 0, 0.1 * math.min(deltaTime * 60, 1))
+        -- Only calculate vertical bobbing if player is moving
+        if rootMagnitude > 0.5 then
+            -- Pre-calculate time-based values with increased bobbing intensity (vertical only)
+            local timeValue = tick() * 14
+            func1 = lerp(func1, math.cos(timeValue) * 0.25 * scaledDeltaTime, 0.08 * scaledDeltaTime)
+            func2 = lerp(func2, math.cos(timeValue * 0.9) * 0.15 * scaledDeltaTime, 0.08 * scaledDeltaTime)
+        else
+            -- Gradually reduce bobbing when stationary
+            func1 = lerp(func1, 0, 0.1 * deltaTime)
+            func2 = lerp(func2, 0, 0.1 * deltaTime)
+        end
     end
     
     -- Reset sway-related variables to prevent any leftover sway effects
-    val2 = lerp(val2, 0, 0.2 * math.min(deltaTime * 60, 1))
-    func4 = lerp(func4, 0, 0.2 * math.min(deltaTime * 60, 1))
-    val = lerp(val, 0, 0.15 * math.min(deltaTime * 60, 1))
+    val2 = lerp(val2, 0, 0.2 * deltaTime)
+    func4 = lerp(func4, 0, 0.2 * deltaTime)
+    val = lerp(val, 0, 0.15 * deltaTime)
     
     -- Create subtle vertical-only bobbing CFrame
     local isMoving = rootMagnitude > 0.5
@@ -93,17 +94,14 @@ local function calculateMovementBobbing(deltaTime, humanoid)
     -- Update camera zoom limits and look vector
     player.CameraMaxZoomDistance = 128
     player.CameraMinZoomDistance = 0.5
-    vect3 = lerp(vect3, camera.CFrame.LookVector, 0.125 * math.min(deltaTime * 60, 1))
+    vect3 = lerp(vect3, camera.CFrame.LookVector, 0.125 * deltaTime)
 end
 
 -- Calculate mouse-based sway effects (using mouse input)
 local function calculateMouseSway(mouseDelta, deltaTime)
-    -- ENHANCED: Proper delta time scaling for 60 FPS baseline
-    local frameRateScale = math.min(deltaTime * 60, 1)
-    
     -- Update both sway variables using the same mouse input
-    Turn = lerp(Turn, math.clamp(mouseDelta.X, -5.0, 5.0), math.min(6 * frameRateScale, 0.5))
-    func3 = lerp(func3, math.clamp(mouseDelta.X, -3.5, 3.5), 0.25 * frameRateScale)
+    Turn = lerp(Turn, math.clamp(mouseDelta.X, -5.0, 5.0), math.min(6 * deltaTime, 0.5))
+    func3 = lerp(func3, math.clamp(mouseDelta.X, -3.5, 3.5), 0.25 * deltaTime)
     
     -- Return sway CFrame
     return CFrame.Angles(0, 0, math.rad(Turn * 0.8))
@@ -115,8 +113,7 @@ local function calculateScreenShake(deltaTime)
         return CFrame.new()
     end
     
-    -- ENHANCED: Use consistent time tracking
-    ElapsedShakeTime = ElapsedShakeTime + deltaTime
+    ElapsedShakeTime = tick() - ShakeStartTime
 
     if ShakeDuration > 0 and ElapsedShakeTime >= ShakeDuration then
         CameraSystem:StopShake()
@@ -132,7 +129,7 @@ local function calculateScreenShake(deltaTime)
     -- Apply fade out to current intensity
     local currentIntensity = InitialShakeIntensity * fadeOutFactor
 
-    -- Generate Perlin noise offsets with fading intensity using accumulated time
+    -- Generate Perlin noise offsets with fading intensity
     local xOffset = math.noise(ElapsedShakeTime * ShakeSpeed, 0, 0) * currentIntensity
     local yOffset = math.noise(0, ElapsedShakeTime * ShakeSpeed, 0) * currentIntensity
     local zOffset = math.noise(0, 0, ElapsedShakeTime * ShakeSpeed) * currentIntensity
@@ -204,19 +201,8 @@ function CameraSystem:StartUnifiedCameraSystem()
     local character = player.Character or player.CharacterAdded:Wait()
     local humanoid = character:WaitForChild("Humanoid")
     
-    -- ENHANCED: Initialize time tracking
-    lastUpdateTime = os.clock()
-    
     -- Single unified camera update connection
-    mainCameraConnection = RunService.Heartbeat:Connect(function()
-        -- ENHANCED: Calculate delta time using os.clock() with proper clamping
-        local currentTime = os.clock()
-        local deltaTime = currentTime - lastUpdateTime
-        lastUpdateTime = currentTime
-        
-        -- CRITICAL: Clamp delta time below 1 second to prevent stuttering
-        deltaTime = math.min(deltaTime, 1.0)
-        
+    mainCameraConnection = RunService.RenderStepped:Connect(function(deltaTime)
         -- Stop all effects if character dies
         if humanoid.Health <= 0 then
             self:StopUnifiedCameraSystem()
@@ -242,7 +228,7 @@ function CameraSystem:StartUnifiedCameraSystem()
         camera.CFrame = camera.CFrame * finalTransform
     end)
     
-    print("Unified camera system started with enhanced delta time handling")
+    print("Unified camera system started")
 end
 
 function CameraSystem:StartR6BodyVisibility()
@@ -283,11 +269,6 @@ function CameraSystem:StartR6BodyVisibility()
         -- Also restart unified camera system for new character
         self:StopUnifiedCameraSystem()
         task.wait(0.1)
-        
-        -- ENHANCED: Reset time tracking on character spawn
-        bobbingTime = 0
-        ElapsedShakeTime = 0
-        
         self:StartUnifiedCameraSystem()
     end)
     
@@ -329,7 +310,7 @@ function CameraSystem:StartShake(duration, intensity, speed)
     ShakeSpeed = speed or 15 -- Default speed
 
     IsShaking = true
-    -- ENHANCED: Reset elapsed time properly
+    ShakeStartTime = tick()
     ElapsedShakeTime = 0
     
     print("Screen shake started - duration:", duration, "intensity:", intensity, "speed:", speed)

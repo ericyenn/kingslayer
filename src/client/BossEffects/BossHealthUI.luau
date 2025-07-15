@@ -297,6 +297,15 @@ function BossHealthUI:Show(health, maxHp, name, stacks)
             frameTween:Play()
         end
         
+        -- Animate health bar fill appearing (FIX: Added missing transparency animation)
+        if healthBarFill then
+            local fillTween = TweenService:Create(healthBarFill,
+                TweenInfo.new(CONFIG.APPEAR_DURATION * 0.6, Enum.EasingStyle.Quart, Enum.EasingDirection.Out),
+                {BackgroundTransparency = CONFIG.IDLE_TRANSPARENCY}
+            )
+            fillTween:Play()
+        end
+        
         -- Animate multiplier appearing
         if multiplierLabel and multiplierLabel.Visible then
             local multiplierTween = TweenService:Create(multiplierLabel,

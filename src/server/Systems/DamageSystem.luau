@@ -12,7 +12,7 @@ local Categories = require(ReplicatedStorage.Shared.ItemCategory)
 -- Anti-cheat configuration
 local DAMAGE_CONFIG = {
     MAX_DAMAGE_DISTANCE = 10, -- Maximum distance player can be from target
-    DAMAGE_COOLDOWN = 0.3, -- Minimum time between damage applications per player
+    DAMAGE_COOLDOWN = 0.1, -- Minimum time between damage applications per player
     MAX_DAMAGE_PER_HIT = 50, -- Maximum damage that can be applied in one hit
 }
 

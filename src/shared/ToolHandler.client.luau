@@ -26,7 +26,7 @@ local camera = workspace.CurrentCamera
 
 -- Debounce to prevent spamming the use action
 local debounce = false
-local DEBOUNCE_TIME = 0.5 -- 500ms
+local DEBOUNCE_TIME = 0.25 -- 250ms
 
 -- Charged attack configuration
 local CHARGE_CONFIG = {
@@ -61,8 +61,8 @@ local SWING_ANIMATION_ID = "rbxassetid://110625725642736" -- Custom swing animat
 
 -- Shape cast configuration - easy to adjust
 local SHAPE_CAST_CONFIG = {
-    radius = Vector3.new(3, 3, 3), -- Size of the detection area (reduced for more precise combat)
-    distance = 3, -- Distance in front of player
+    radius = Vector3.new(2, 2, 2), -- Size of the detection area (reduced for more precise combat)
+    distance = 4, -- Distance in front of player
     ignoreFloor = true, -- Whether to ignore floor/ground
     visualDuration = 0.1, -- How long visual feedback lasts
 }

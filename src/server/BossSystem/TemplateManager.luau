@@ -80,11 +80,12 @@ function TemplateManager.loadBossTemplate(): Model
     
     local boss = template:Clone()
     
-    -- Ensure proper setup
+    -- Ensure proper setup (no longer setting health - using custom health system)
     local humanoid = boss:FindFirstChild("Humanoid") :: Humanoid
     if humanoid then
-        humanoid.MaxHealth = BossConfig.boss.health
-        humanoid.Health = BossConfig.boss.health
+        -- Set to very high health to prevent accidental death from Roblox systems
+        humanoid.MaxHealth = math.huge
+        humanoid.Health = math.huge
         humanoid.WalkSpeed = BossConfig.boss.walkSpeed
         humanoid.JumpPower = 0 -- Prevent jumping
         humanoid.PlatformStand = false -- Allow normal movement
@@ -148,17 +149,18 @@ function TemplateManager.loadBossTemplateAsync(callback: (Model?) -> ())
             -- Yield again before property setup
             FrameBudgetManager.yieldIfNeeded(0.005) -- 5ms estimate for property setup
             
-            -- ENHANCED: Setup with validation
+            -- ENHANCED: Setup with validation (no longer setting health - using custom health system)
             print("TEMPLATE DEBUG: Setting up boss properties...")
-            humanoid.MaxHealth = BossConfig.boss.health
-            humanoid.Health = BossConfig.boss.health
+            -- Set to very high health to prevent accidental death from Roblox systems
+            humanoid.MaxHealth = math.huge
+            humanoid.Health = math.huge
             humanoid.WalkSpeed = BossConfig.boss.walkSpeed
             humanoid.JumpPower = 0 -- Prevent jumping
             humanoid.PlatformStand = false -- Allow normal movement
             -- Disable default health bar and nametag
             humanoid.DisplayDistanceType = Enum.HumanoidDisplayDistanceType.None
             
-            print("TEMPLATE DEBUG: Boss humanoid configured - Health:", humanoid.Health, "Speed:", humanoid.WalkSpeed, "DisplayDistance: None")
+            print("TEMPLATE DEBUG: Boss humanoid configured - Speed:", humanoid.WalkSpeed, "DisplayDistance: None (Health handled by custom system)")
             
             -- Set default properties but DON'T set position (will be set by caller)
             rootPart.Anchored = false

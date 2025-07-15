@@ -746,7 +746,6 @@ function BossController.damageBoss(damage: number, source: Player?): boolean
     -- Apply damage normally when vulnerable
     local oldHealth = activeBoss.health
     activeBoss.health = math.max(0, activeBoss.health - damage)
-    activeBoss.humanoid.Health = activeBoss.health
     
     -- Send health update to clients if health changed
     if oldHealth ~= activeBoss.health then
