@@ -1,27 +1,23 @@
--- Camera system for first-person lock with crosshair, walk bobbing, sway, and R6 body visibility
+-- New Camera System with third-person/first-person toggle
 local CameraSystem = {}
 
 local Players = game:GetService("Players")
 local UserInputService = game:GetService("UserInputService")
 local RunService = game:GetService("RunService")
-local TweenService = game:GetService("TweenService")
+local UserGameSettings = UserSettings():GetService("UserGameSettings")
 
 local player = Players.LocalPlayer
 local playerGui = player:WaitForChild("PlayerGui")
 local camera = workspace.CurrentCamera
 
--- Crosshair UI elements
-local crosshairGui = nil
+-- Camera system variables
+local mobileDragging = false
+local dragging = false
+local distance = 0.5 -- Start in first-person mode
 
--- Screen shake variables (Perlin noise implementation)
-local ShakeIntensity = 0.1 -- How strong the shake is
-local ShakeSpeed = 15 -- How fast the shake oscillates  
-local ShakeDuration = 0 -- How long the shake should last
-local ElapsedShakeTime = 0
-local InitialShakeIntensity = 0.1 -- Store the original intensity for fade out
-
-local IsShaking = false
-local ShakeStartTime = 0
+-- Rotation variables
+local xRot = 0
+local yRot = 0
 
 -- Walk bobbing variables
 local func1 = 0
@@ -30,32 +26,66 @@ local func3 = 0
 local func4 = 0
 local val = 0
 local val2 = 0
-local int = 5
-local int2 = 5
-local vect3 = Vector3.new()
 
 -- Camera sway variables
 local Turn = 0
 
--- Unified camera update connection
-local mainCameraConnection = nil
-local bodyVisibilityConnection = nil
+-- Crosshair UI elements
+local crosshairGui = nil
+
+-- Connections
+local renderStepConnection = nil
+local inputBeganConnection = nil
+local inputEndedConnection = nil
+local cameraChangedConnection = nil
+
+-- Cache for performance optimization
+local lastFrameTime = tick()
+local TARGET_FPS = 60
+local FRAME_TIME_BUDGET = 1/TARGET_FPS
 
 -- Helper function for linear interpolation
 local function lerp(a, b, c)
     return a + (b - a) * c
 end
 
--- Calculate movement-based bobbing effects (vertical only, no sway)
-local function calculateMovementBobbing(deltaTime, humanoid)
+-- Initialize camera rotation from current camera
+local function initializeCameraRotation()
+    local camX, camY, camZ = camera.CFrame:ToEulerAnglesXYZ()
+    xRot = camY
+    yRot = camX
+end
+
+-- Handle body transparency - make body visible
+local function updateBodyTransparency()
+    if not camera.CameraSubject or not camera.CameraSubject.Parent then return end
+    
+    for _, v in pairs(camera.CameraSubject.Parent:GetDescendants()) do
+        if (v:IsA("BasePart") or v:IsA("Decal") or v:IsA("Texture")) and not v:FindFirstAncestorOfClass("Tool") then
+            -- Make body visible by setting low transparency
+            v.LocalTransparencyModifier = 0
+        end
+    end
+end
+
+-- Calculate movement-based bobbing effects
+local function calculateMovementBobbing(deltaTime)
+    local character = player.Character
+    if not character then return CFrame.new() end
+    
+    local humanoid = character:FindFirstChild("Humanoid")
     if not humanoid or humanoid.Health <= 0 then
         return CFrame.new()
     end
     
     local rootPart = humanoid.RootPart
-    local rootMagnitude = rootPart and Vector3.new(rootPart.Velocity.X, 0, rootPart.Velocity.Z).Magnitude or 0
+    if not rootPart then
+        return CFrame.new()
+    end
     
-    -- Smooth deltaTime scaling for consistent bobbing
+    local rootMagnitude = Vector3.new(rootPart.Velocity.X, 0, rootPart.Velocity.Z).Magnitude
+    
+    -- Smooth deltaTime scaling for consistent bobbing with performance protection
     local scaledDeltaTime = math.min(deltaTime * 30, 2) -- Cap scaled deltaTime to prevent spikes
     
     -- Handle delta time spikes and movement-based bobbing calculations
@@ -63,232 +93,227 @@ local function calculateMovementBobbing(deltaTime, humanoid)
         func1 = lerp(func1, 0, 0.1)
         func2 = lerp(func2, 0, 0.1)
     else
-        -- Only calculate vertical bobbing if player is moving
+        -- Only calculate bobbing if player is moving
         if rootMagnitude > 0.5 then
-            -- Pre-calculate time-based values with increased bobbing intensity (vertical only)
+            -- Pre-calculate time-based values with bobbing intensity
             local timeValue = tick() * 14
-            func1 = lerp(func1, math.cos(timeValue) * 0.25 * scaledDeltaTime, 0.08 * scaledDeltaTime)
-            func2 = lerp(func2, math.cos(timeValue * 0.9) * 0.15 * scaledDeltaTime, 0.08 * scaledDeltaTime)
+            local cosTimeValue = math.cos(timeValue)
+            local cosTimeValueSlow = math.cos(timeValue * 0.9)
+            
+            func1 = lerp(func1, cosTimeValue * 0.25 * scaledDeltaTime, 0.08 * scaledDeltaTime)
+            func2 = lerp(func2, cosTimeValueSlow * 0.15 * scaledDeltaTime, 0.08 * scaledDeltaTime)
         else
             -- Gradually reduce bobbing when stationary
-            func1 = lerp(func1, 0, 0.1 * deltaTime)
-            func2 = lerp(func2, 0, 0.1 * deltaTime)
+            local lerpFactor = 0.1 * deltaTime
+            func1 = lerp(func1, 0, lerpFactor)
+            func2 = lerp(func2, 0, lerpFactor)
         end
     end
     
-    -- Reset sway-related variables to prevent any leftover sway effects
+    -- Reset some sway-related variables
     val2 = lerp(val2, 0, 0.2 * deltaTime)
     func4 = lerp(func4, 0, 0.2 * deltaTime)
     val = lerp(val, 0, 0.15 * deltaTime)
     
-    -- Create subtle vertical-only bobbing CFrame
+    -- Create bobbing CFrame
     local isMoving = rootMagnitude > 0.5
     if isMoving then
-        -- Only apply vertical bobbing (func1, func2) without any sway components
-        return CFrame.fromEulerAnglesXYZ(math.rad(func1 * 1.5), math.rad(func2 * 1.0), 0)
+        -- Apply vertical bobbing and slight horizontal sway
+        return CFrame.fromEulerAnglesXYZ(math.rad(func1 * 1.5), math.rad(func2 * 1.0), math.rad(func1 * 0.5))
     else
         -- No movement bobbing when stationary
         return CFrame.new()
     end
-    
-    -- Update camera zoom limits and look vector
-    player.CameraMaxZoomDistance = 128
-    player.CameraMinZoomDistance = 0.5
-    vect3 = lerp(vect3, camera.CFrame.LookVector, 0.125 * deltaTime)
 end
 
--- Calculate mouse-based sway effects (using mouse input)
+-- Calculate mouse-based sway effects
 local function calculateMouseSway(mouseDelta, deltaTime)
-    -- Update both sway variables using the same mouse input
-    Turn = lerp(Turn, math.clamp(mouseDelta.X, -5.0, 5.0), math.min(6 * deltaTime, 0.5))
-    func3 = lerp(func3, math.clamp(mouseDelta.X, -3.5, 3.5), 0.25 * deltaTime)
+    -- Update sway variables using mouse input
+    local clampedMouseX = math.clamp(mouseDelta.X, -5.0, 5.0)
+    local clampedMouseXSway = math.clamp(mouseDelta.X, -3.5, 3.5)
+    
+    Turn = lerp(Turn, clampedMouseX, math.min(6 * deltaTime, 0.5))
+    func3 = lerp(func3, clampedMouseXSway, 0.25 * deltaTime)
     
     -- Return sway CFrame
     return CFrame.Angles(0, 0, math.rad(Turn * 0.8))
 end
 
--- Calculate screen shake effects
-local function calculateScreenShake(deltaTime)
-    if not IsShaking then
-        return CFrame.new()
+-- Main camera update function
+local function updateCamera(deltaTime)
+    local currentFrameTime = tick()
+    
+    -- Performance protection: skip frame if budget exceeded
+    if currentFrameTime - lastFrameTime < FRAME_TIME_BUDGET * 0.8 then
+        return
     end
     
-    ElapsedShakeTime = tick() - ShakeStartTime
-
-    if ShakeDuration > 0 and ElapsedShakeTime >= ShakeDuration then
-        CameraSystem:StopShake()
-        return CFrame.new()
-    end
-
-    -- Calculate fade out factor (intensity decreases over time)
-    local fadeOutFactor = 1
-    if ShakeDuration > 0 then
-        fadeOutFactor = math.max(0, 1 - (ElapsedShakeTime / ShakeDuration))
+    -- Get character and humanoid for body rotation
+    local character = player.Character
+    local humanoid = character and character:FindFirstChild("Humanoid")
+    local rootPart = character and character:FindFirstChild("HumanoidRootPart")
+    
+    -- Set mouse behavior based on distance
+    if distance <= 0.5 then
+        UserInputService.MouseBehavior = Enum.MouseBehavior.LockCenter
+    else
+        UserInputService.MouseBehavior = Enum.MouseBehavior.Default
     end
     
-    -- Apply fade out to current intensity
-    local currentIntensity = InitialShakeIntensity * fadeOutFactor
-
-    -- Generate Perlin noise offsets with fading intensity
-    local xOffset = math.noise(ElapsedShakeTime * ShakeSpeed, 0, 0) * currentIntensity
-    local yOffset = math.noise(0, ElapsedShakeTime * ShakeSpeed, 0) * currentIntensity
-    local zOffset = math.noise(0, 0, ElapsedShakeTime * ShakeSpeed) * currentIntensity
-
-    return CFrame.new(xOffset, yOffset, zOffset)
-end
-
--- Combine all camera effects into a single transform
-local function combineEffects(movementBobbing, mouseSway, screenShake)
-    -- Apply effects in order: Movement Bobbing → Mouse Sway → Screen Shake
-    return movementBobbing * mouseSway * screenShake
+    local mouseDelta = UserInputService:GetMouseDelta()
+    local mouseSensitivity = UserGameSettings.MouseSensitivity
+    
+    if UserInputService.MouseBehavior == Enum.MouseBehavior.LockCenter then
+        dragging = false
+    end
+    
+    -- Update rotation if dragging or in first-person mode
+    if dragging or mobileDragging or UserInputService.MouseBehavior ~= Enum.MouseBehavior.Default then
+        if dragging then
+            UserInputService.MouseBehavior = Enum.MouseBehavior.LockCurrentPosition
+        end
+        xRot += math.rad((mouseDelta.X * 0.25) * mouseSensitivity * -1)
+        yRot += math.rad((mouseDelta.Y * 0.25) * mouseSensitivity * -1)
+    end
+    
+    -- Clamp vertical rotation
+    yRot = math.clamp(yRot, math.rad(-75), math.rad(75))
+    
+    -- Make body follow camera direction (rotate character to match camera horizontal rotation)
+    if rootPart and humanoid and humanoid.Health > 0 then
+        -- Create rotation CFrame from camera's horizontal rotation
+        local bodyRotation = CFrame.fromEulerAnglesYXZ(0, xRot, 0)
+        -- Apply rotation while keeping the character's position
+        rootPart.CFrame = CFrame.new(rootPart.Position) * bodyRotation
+    end
+    
+    -- Calculate effects for enhanced camera feel
+    local movementBobbing = CFrame.new()
+    local mouseSway = CFrame.new()
+    
+    -- Only apply bobbing and sway in first-person mode
+    if distance <= 0.5 then
+        movementBobbing = calculateMovementBobbing(deltaTime)
+        mouseSway = calculateMouseSway(mouseDelta, deltaTime)
+    end
+    
+    -- Combine effects
+    local effectsTransform = movementBobbing * mouseSway
+    
+    -- Update camera position and rotation
+    if camera.CameraSubject and camera.CameraSubject.Position then
+        camera.Focus = CFrame.new(camera.CameraSubject.Position)
+        camera.CFrame = camera.Focus
+        
+        -- Add camera offset to reduce body visibility in first-person
+        local cameraOffset = Vector3.new(0, 0, 0)
+        if distance <= 0.5 then
+            -- Move camera slightly back and up to reduce body visibility
+            cameraOffset = Vector3.new(0, 1.1, -0.2)
+        end
+        
+        camera.CFrame = camera.CFrame * CFrame.fromEulerAnglesYXZ(yRot, xRot, 0) * CFrame.new(cameraOffset.X, cameraOffset.Y, distance + cameraOffset.Z)
+        
+        -- Apply effects in first-person mode
+        if distance <= 0.5 then
+            camera.CFrame = camera.CFrame * effectsTransform
+        end
+    end
+    
+    lastFrameTime = currentFrameTime
 end
 
 function CameraSystem:Initialize()
     -- Set up global reference for other systems
     _G.CameraSystem = self
     
-    -- Lock to first person as shown in the DevForum guide
-    -- https://devforum.roblox.com/t/how-to-make-player-lock-first-person/1785472/10
-    player.CameraMode = Enum.CameraMode.LockFirstPerson
+    -- Wait for character and set camera subject
+    local character = player.Character or player.CharacterAdded:Wait()
+    local head = character:WaitForChild("Head")
     
-    -- Disable mouse cursor and create crosshair
-    -- https://devforum.roblox.com/t/making-the-cursor-invisible/1143272
-    UserInputService.MouseIconEnabled = false
+    -- Set up camera
+    camera.CameraType = Enum.CameraType.Scriptable
+    camera.CameraSubject = head
+    
+    -- Initialize camera rotation
+    initializeCameraRotation()
+    
+    -- Create crosshair for first-person mode
     self:CreateCrosshair()
     
-    -- Initialize unified camera system
-    self:StartUnifiedCameraSystem()
-    self:StartR6BodyVisibility()
+    -- Set up input connections
+    inputBeganConnection = UserInputService.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton2 then
+            dragging = true
+        end
+        if input.UserInputType == Enum.UserInputType.Touch then
+            mobileDragging = true
+        end
+    end)
     
-    print("Camera locked to first person mode with unified dynamic effects")
-    print("CameraSystem initialized successfully")
+    inputEndedConnection = UserInputService.InputEnded:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton2 then
+            dragging = false
+        end
+        if input.UserInputType == Enum.UserInputType.Touch then
+            mobileDragging = false
+        end
+    end)
+    
+    -- Set up camera property changed connection for transparency
+    cameraChangedConnection = camera:GetPropertyChangedSignal("CFrame"):Connect(updateBodyTransparency)
+    
+    -- Set up main camera update loop with deltaTime
+    renderStepConnection = RunService:BindToRenderStep("Camera", Enum.RenderPriority.Camera.Value, updateCamera)
+    
+    -- Handle character respawning
+    player.CharacterAdded:Connect(function(newCharacter)
+        local newHead = newCharacter:WaitForChild("Head")
+        camera.CameraSubject = newHead
+        initializeCameraRotation()
+    end)
+    
+    print("Enhanced Camera System initialized - Distance:", distance, "(0.5 = first-person with bobbing/sway, higher = third-person)")
 end
 
 function CameraSystem:CreateCrosshair()
+    -- Clean up existing crosshair first
+    if crosshairGui then
+        crosshairGui:Destroy()
+    end
+    
     -- Create crosshair GUI
     crosshairGui = Instance.new("ScreenGui")
     crosshairGui.Name = "CrosshairGui"
     crosshairGui.ResetOnSpawn = false
     crosshairGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-    crosshairGui.IgnoreGuiInset = true -- This ensures proper centering
+    crosshairGui.IgnoreGuiInset = true
     crosshairGui.Parent = playerGui
     
     -- Create a simple dot crosshair
     local crosshairDot = Instance.new("Frame")
     crosshairDot.Name = "CrosshairDot"
-    crosshairDot.Size = UDim2.new(0, 6, 0, 6) -- Small 6x6 pixel dot
-    crosshairDot.Position = UDim2.new(0.5, -3, 0.5, -3) -- Perfect center
-    crosshairDot.BackgroundColor3 = Color3.fromRGB(255, 255, 255) -- White dot
+    crosshairDot.Size = UDim2.new(0, 6, 0, 6)
+    crosshairDot.Position = UDim2.new(0.5, -3, 0.5, -3)
+    crosshairDot.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
     crosshairDot.BorderSizePixel = 0
     crosshairDot.Parent = crosshairGui
     
     -- Make it circular
     local corner = Instance.new("UICorner")
-    corner.CornerRadius = UDim.new(1, 0) -- Fully rounded = circle
+    corner.CornerRadius = UDim.new(1, 0)
     corner.Parent = crosshairDot
     
-    -- Add black outline for visibility against all backgrounds
+    -- Add black outline for visibility
     local outline = Instance.new("UIStroke")
     outline.Color = Color3.fromRGB(0, 0, 0)
     outline.Thickness = 1
     outline.Parent = crosshairDot
     
-    print("Crosshair dot created")
-end
-
-function CameraSystem:StartUnifiedCameraSystem()
-    -- Wait for character and humanoid
-    local character = player.Character or player.CharacterAdded:Wait()
-    local humanoid = character:WaitForChild("Humanoid")
+    -- Only show crosshair in first-person mode
+    crosshairGui.Enabled = (distance <= 0.5)
     
-    -- Single unified camera update connection
-    mainCameraConnection = RunService.RenderStepped:Connect(function(deltaTime)
-        -- Stop all effects if character dies
-        if humanoid.Health <= 0 then
-            self:StopUnifiedCameraSystem()
-            return
-        end
-        
-        -- 1. Get mouse input ONCE
-        local mouseDelta = UserInputService:GetMouseDelta()
-        
-        -- 2. Calculate movement-based effects (no mouse input)
-        local movementBobbing = calculateMovementBobbing(deltaTime, humanoid)
-        
-        -- 3. Calculate mouse-based effects (using mouseDelta)
-        local mouseSway = calculateMouseSway(mouseDelta, deltaTime)
-        
-        -- 4. Calculate screen shake (if active)
-        local screenShake = calculateScreenShake(deltaTime)
-        
-        -- 5. Combine all effects into single transform
-        local finalTransform = combineEffects(movementBobbing, mouseSway, screenShake)
-        
-        -- 6. Apply to camera ONCE
-        camera.CFrame = camera.CFrame * finalTransform
-    end)
-    
-    print("Unified camera system started")
-end
-
-function CameraSystem:StartR6BodyVisibility()
-    -- Wait for character to ensure proper setup
-    local function setupBodyVisibility()
-        local character = player.Character
-        if not character then return end
-        
-        bodyVisibilityConnection = RunService.RenderStepped:Connect(function()
-            -- Check for R6 limbs and make them visible in first person
-            if character:FindFirstChild("Right Arm") and character:FindFirstChild("Left Arm") then
-                character:FindFirstChild("Right Arm").LocalTransparencyModifier = 0
-                character:FindFirstChild("Left Arm").LocalTransparencyModifier = 0
-                character:FindFirstChild("Right Leg").LocalTransparencyModifier = 0
-                character:FindFirstChild("Left Leg").LocalTransparencyModifier = 0
-                character:FindFirstChild("Torso").LocalTransparencyModifier = 0
-                
-                -- Set camera offset for better first-person view
-                local humanoid = character:FindFirstChild("Humanoid")
-                if humanoid then
-                    humanoid.CameraOffset = Vector3.new(0, 0, -1)
-                end
-            end
-        end)
-    end
-    
-    -- Setup for current character
-    if player.Character then
-        setupBodyVisibility()
-    end
-    
-    -- Setup for future character spawns
-    player.CharacterAdded:Connect(function(character)
-        -- Wait a moment for character to fully load
-        task.wait(0.1)
-        setupBodyVisibility()
-        
-        -- Also restart unified camera system for new character
-        self:StopUnifiedCameraSystem()
-        task.wait(0.1)
-        self:StartUnifiedCameraSystem()
-    end)
-    
-    print("R6 body visibility system started")
-end
-
-function CameraSystem:StopUnifiedCameraSystem()
-    if mainCameraConnection then
-        mainCameraConnection:Disconnect()
-        mainCameraConnection = nil
-        print("Unified camera system stopped")
-    end
-end
-
-function CameraSystem:StopR6BodyVisibility()
-    if bodyVisibilityConnection then
-        bodyVisibilityConnection:Disconnect()
-        bodyVisibilityConnection = nil
-        print("R6 body visibility stopped")
-    end
+    print("Crosshair created")
 end
 
 function CameraSystem:ShowCrosshair()
@@ -303,55 +328,111 @@ function CameraSystem:HideCrosshair()
     end
 end
 
-function CameraSystem:StartShake(duration, intensity, speed)
-    ShakeDuration = duration or 0.5 -- Default duration if not provided
-    ShakeIntensity = intensity or 0.1 -- Default intensity
-    InitialShakeIntensity = intensity or 0.1 -- Store initial intensity for fade out
-    ShakeSpeed = speed or 15 -- Default speed
-
-    IsShaking = true
-    ShakeStartTime = tick()
-    ElapsedShakeTime = 0
+-- Set camera distance (0.5 = first-person, higher = third-person)
+function CameraSystem:SetDistance(newDistance)
+    distance = math.max(0.5, newDistance)
     
-    print("Screen shake started - duration:", duration, "intensity:", intensity, "speed:", speed)
+    -- Update crosshair visibility based on distance
+    if crosshairGui then
+        crosshairGui.Enabled = (distance <= 0.5)
+    end
+    
+    -- Update mouse cursor visibility
+    UserInputService.MouseIconEnabled = (distance > 0.5)
+    
+    print("Camera distance set to:", distance)
+end
+
+-- Get current camera distance
+function CameraSystem:GetDistance()
+    return distance
+end
+
+-- Toggle between first-person and third-person
+function CameraSystem:ToggleDistance()
+    if distance <= 0.5 then
+        self:SetDistance(5) -- Switch to third-person
+    else
+        self:SetDistance(0.5) -- Switch to first-person
+    end
+end
+
+-- Legacy compatibility functions for screen shake (simplified)
+function CameraSystem:StartShake(duration, intensity, speed)
+    -- This new camera system doesn't have built-in shake
+    -- You could implement it here if needed
+    print("Screen shake not implemented in this camera system")
 end
 
 function CameraSystem:StopShake()
-    IsShaking = false
+    print("Screen shake not implemented in this camera system")
 end
 
--- Legacy function for backward compatibility
 function CameraSystem:ShakeScreen(intensity, duration)
-    self:StartShake(duration, intensity, 15) -- Convert old parameters to new format
+    self:StartShake(duration, intensity, 15)
 end
 
--- Legacy compatibility functions (now consolidated into unified system)
+-- Legacy compatibility for walk bobbing (not implemented in new system)
 function CameraSystem:StartWalkBobbing()
-    -- This is now handled by the unified system
-    print("Walk bobbing is now handled by unified camera system")
+    print("Walk bobbing not implemented in this camera system")
 end
 
 function CameraSystem:StopWalkBobbing()
-    -- This is now handled by the unified system
-    print("Walk bobbing stop is now handled by unified camera system")
+    print("Walk bobbing not implemented in this camera system")
 end
 
 function CameraSystem:StartCameraSway()
-    -- This is now handled by the unified system
-    print("Camera sway is now handled by unified camera system")
+    print("Camera sway not implemented in this camera system")
 end
 
 function CameraSystem:StopCameraSway()
-    -- This is now handled by the unified system
-    print("Camera sway stop is now handled by unified camera system")
+    print("Camera sway not implemented in this camera system")
 end
 
--- Cleanup function to stop all camera effects
+-- Cleanup function
 function CameraSystem:Cleanup()
-    self:StopUnifiedCameraSystem()
-    self:StopR6BodyVisibility()
-    self:StopShake()
-    print("CameraSystem cleanup completed")
+    -- Disconnect all connections
+    if renderStepConnection then
+        RunService:UnbindFromRenderStep("Camera")
+        renderStepConnection = nil
+    end
+    
+    if inputBeganConnection then
+        inputBeganConnection:Disconnect()
+        inputBeganConnection = nil
+    end
+    
+    if inputEndedConnection then
+        inputEndedConnection:Disconnect()
+        inputEndedConnection = nil
+    end
+    
+    if cameraChangedConnection then
+        cameraChangedConnection:Disconnect()
+        cameraChangedConnection = nil
+    end
+    
+    -- Clean up crosshair GUI
+    if crosshairGui then
+        crosshairGui:Destroy()
+        crosshairGui = nil
+    end
+    
+    -- Reset camera and input settings
+    camera.CameraType = Enum.CameraType.Custom
+    UserInputService.MouseBehavior = Enum.MouseBehavior.Default
+    UserInputService.MouseIconEnabled = true
+    
+    -- Reset character transparency
+    if camera.CameraSubject and camera.CameraSubject.Parent then
+        for _, v in pairs(camera.CameraSubject.Parent:GetDescendants()) do
+            if v:IsA("BasePart") then
+                v.LocalTransparencyModifier = 0
+            end
+        end
+    end
+    
+    print("Enhanced Camera System cleanup completed")
 end
 
 return CameraSystem 
