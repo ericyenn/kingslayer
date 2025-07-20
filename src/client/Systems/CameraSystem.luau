@@ -56,14 +56,27 @@ local function initializeCameraRotation()
     yRot = camX
 end
 
--- Handle body transparency - make body visible
+-- Handle body transparency - hide head and accessories in first-person
 local function updateBodyTransparency()
     if not camera.CameraSubject or not camera.CameraSubject.Parent then return end
     
     for _, v in pairs(camera.CameraSubject.Parent:GetDescendants()) do
         if (v:IsA("BasePart") or v:IsA("Decal") or v:IsA("Texture")) and not v:FindFirstAncestorOfClass("Tool") then
-            -- Make body visible by setting low transparency
-            v.LocalTransparencyModifier = 0
+            -- In first-person mode, hide head and accessories but keep body visible
+            if distance <= 0.5 then
+                -- Make head and accessories completely invisible in first-person
+                if v.Name == "Head" or v.Parent.Name == "Head" or v:FindFirstAncestor("Head") then
+                    v.LocalTransparencyModifier = 1
+                elseif v:FindFirstAncestorOfClass("Accessory") then
+                    -- Hide all accessory parts (hats, hair, etc.)
+                    v.LocalTransparencyModifier = 1
+                else
+                    v.LocalTransparencyModifier = 0 -- Keep body visible
+                end
+            else
+                -- Make everything visible in third-person
+                v.LocalTransparencyModifier = 0
+            end
         end
     end
 end
@@ -426,7 +439,7 @@ function CameraSystem:Cleanup()
     -- Reset character transparency
     if camera.CameraSubject and camera.CameraSubject.Parent then
         for _, v in pairs(camera.CameraSubject.Parent:GetDescendants()) do
-            if v:IsA("BasePart") then
+            if v:IsA("BasePart") or v:IsA("Decal") or v:IsA("Texture") then
                 v.LocalTransparencyModifier = 0
             end
         end

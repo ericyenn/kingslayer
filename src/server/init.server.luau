@@ -75,4 +75,15 @@ DialogueHandler:SetNPCManager(NPCManager)
 DialogueHandler:Initialize()
 TraderHandler:Initialize()
 
+-- Initialize enemy systems (from stayalive-1 integration)
+local EnemySystemInitializer = require(script.EnemySystemInitializer)
+local SpawnerSetup = require(script.SpawnerSetup)
+
+-- Initialize spawners BEFORE starting enemy systems
+SpawnerSetup.initializeAllSpawners()
+
+_G.EnemySystemInitializer = EnemySystemInitializer
+_G.SpawnerSetup = SpawnerSetup
+print("Enemy systems integrated:", EnemySystemInitializer.initialized)
+
 print("Server systems initialized!")
