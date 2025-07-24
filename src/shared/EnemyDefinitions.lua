@@ -52,7 +52,7 @@ EnemyDefinitions.enemies = {
             moveSpeed = 18, -- Faster than default melee
             damage = 30,    -- Higher damage
             attackSpeed = 2.2,
-            detectionRange = 35,
+            detectionRange = 15,
             -- Idle movement settings
             idleMovementEnabled = true,
             idleMovementRadius = 20,

@@ -36,12 +36,22 @@ Components.EnemyType = {
 Components.EnemyAI = {
     state = "idle",         -- "idle", "patrol", "chase", "attack", "dead"
     stateStartTime = 0,
-    detectionRange = 30,
+    detectionRange = 3,    -- How far enemy can detect players (changed from 30 to 15)
     attackRange = 5,
     speed = 16,
     homePosition = Vector3.new(0, 0, 0),
+    patrolRadius = 30,      -- Maximum distance from homePosition during patrol
     lastUpdateTime = 0,     -- For state-based update frequency
     lastMoveToTime = 0      -- For stuck detection
+}
+
+Components.EnemyChat = {
+    lastChatTime = 0,       -- When this enemy last chatted
+    chatCooldown = 8,       -- Minimum seconds between chats (default 8 seconds)
+    chatRange = 12,         -- How close enemies need to be to chat (studs)
+    canChat = true,         -- Whether this enemy can participate in chat
+    chattedWith = {},       -- Track recent chat partners to prevent spam between same enemies
+    partnerCooldown = 15    -- Seconds before can chat with same partner again
 }
 
 -- Spawning
@@ -53,7 +63,9 @@ Components.Spawner = {
     lastSpawnTime = 0,
     spawnedEntities = {},   -- Track spawned entities
     centerPosition = Vector3.new(0, 0, 0),  -- Center position for spawning
-    activationRange = 60    -- Only spawn when player within this range
+    activationRange = 60,   -- Only spawn when player within this range
+    spawnType = "once",     -- "once" or "continuous" - defaults to one-time spawning
+    hasSpawned = false      -- Track if one-time spawner has already activated
 }
 
 -- Visual representation (this IS needed - links entities to Roblox models)

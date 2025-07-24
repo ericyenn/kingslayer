@@ -36,7 +36,8 @@ local DEFAULT_VALUES = {
     SpawnerCountMax = 3,
     SpawnerRadius = 25,
     SpawnerCooldown = 15,
-    SpawnerActivationRange = 60
+    SpawnerActivationRange = 60,
+    SpawnerType = "once"  -- Default to one-time spawning
 }
 
 -- Parse enemy string into array format
@@ -122,6 +123,14 @@ local function convertPartToSpawner(part)
     local enemies = parseEnemyString(config.SpawnerEnemies)
     enemies = validateEnemyTypes(enemies)
     
+    -- Validate spawn type
+    local spawnType = config.SpawnerType
+    if spawnType ~= "once" and spawnType ~= "continuous" then
+        warn(string.format("⚠️ Invalid SpawnerType '%s' for part '%s', using default 'once'", 
+            tostring(spawnType), part.Name))
+        spawnType = "once"
+    end
+    
     -- Create spawner entity
     local spawnerId = EntityManager.createEntity()
     
@@ -137,7 +146,9 @@ local function convertPartToSpawner(part)
         lastSpawnTime = 0,
         spawnedEntities = {},
         centerPosition = part.Position,
-        activationRange = math.max(10, config.SpawnerActivationRange)
+        activationRange = math.max(10, config.SpawnerActivationRange),
+        spawnType = spawnType,
+        hasSpawned = false
     })
     
     -- Add component to entity
@@ -147,11 +158,12 @@ local function convertPartToSpawner(part)
     print(string.format("✅ Converted part '%s' to spawner entity %d", part.Name, spawnerId))
     print(string.format("   Position: %s", tostring(part.Position)))
     print(string.format("   Enemies: %s", table.concat(enemies, ", ")))
-    print(string.format("   Count: %d-%d, Radius: %d, Cooldown: %ds", 
+    print(string.format("   Count: %d-%d, Radius: %d, Cooldown: %ds, Type: %s", 
         spawnerComponent.countRange.min, 
         spawnerComponent.countRange.max,
         spawnerComponent.radius,
-        spawnerComponent.cooldown))
+        spawnerComponent.cooldown,
+        spawnerComponent.spawnType))
     
     return spawnerId
 end
@@ -216,7 +228,9 @@ function SpawnerSetup.createFallbackSpawners()
             lastSpawnTime = 0,
             spawnedEntities = {},
             centerPosition = config.pos,
-            activationRange = 60
+            activationRange = 60,
+            spawnType = "continuous",  -- Fallback spawners use continuous for backwards compatibility
+            hasSpawned = false
         }))
         
         table.insert(spawnerEntities, spawnerId)

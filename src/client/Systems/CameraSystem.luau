@@ -5,6 +5,12 @@ local Players = game:GetService("Players")
 local UserInputService = game:GetService("UserInputService")
 local RunService = game:GetService("RunService")
 local UserGameSettings = UserSettings():GetService("UserGameSettings")
+local TweenService = game:GetService("TweenService")
+local DEFAULT_FOV = 70
+local ZOOMED_FOV = 58 -- Less zoom in
+local ZOOM_IN_TIME = 0.5 -- Slower, smoother zoom in
+local ZOOM_OUT_TIME = 0.1
+local fovTween = nil
 
 local player = Players.LocalPlayer
 local playerGui = player:WaitForChild("PlayerGui")
@@ -222,7 +228,7 @@ local function updateCamera(deltaTime)
         local cameraOffset = Vector3.new(0, 0, 0)
         if distance <= 0.5 then
             -- Move camera slightly back and up to reduce body visibility
-            cameraOffset = Vector3.new(0, 1.1, -0.2)
+            cameraOffset = Vector3.new(0, 1, -0.2)
         end
         
         camera.CFrame = camera.CFrame * CFrame.fromEulerAnglesYXZ(yRot, xRot, 0) * CFrame.new(cameraOffset.X, cameraOffset.Y, distance + cameraOffset.Z)
@@ -240,16 +246,32 @@ function CameraSystem:Initialize()
     -- Set up global reference for other systems
     _G.CameraSystem = self
     
+    local function setSpectatorCamera()
+        -- Try to find the ragdoll model in workspace
+        local ragdoll = workspace:FindFirstChild(player.Name)
+        if ragdoll then
+            local subject = ragdoll:FindFirstChild("Head") or ragdoll:FindFirstChild("Torso") or ragdoll:FindFirstChild("HumanoidRootPart")
+            if subject then
+                camera.CameraType = Enum.CameraType.Scriptable
+                camera.CameraSubject = subject
+                distance = 8 -- Third-person distance
+                initializeCameraRotation()
+                return true
+            end
+        end
+        return false
+    end
+
     -- Wait for character and set camera subject
     local character = player.Character or player.CharacterAdded:Wait()
-    local head = character:WaitForChild("Head")
-    
-    -- Set up camera
-    camera.CameraType = Enum.CameraType.Scriptable
-    camera.CameraSubject = head
-    
-    -- Initialize camera rotation
-    initializeCameraRotation()
+    if player:GetAttribute("NoRespawn") then
+        setSpectatorCamera()
+    else
+        local head = character:WaitForChild("Head")
+        camera.CameraType = Enum.CameraType.Scriptable
+        camera.CameraSubject = head
+        initializeCameraRotation()
+    end
     
     -- Create crosshair for first-person mode
     self:CreateCrosshair()
@@ -281,9 +303,13 @@ function CameraSystem:Initialize()
     
     -- Handle character respawning
     player.CharacterAdded:Connect(function(newCharacter)
-        local newHead = newCharacter:WaitForChild("Head")
-        camera.CameraSubject = newHead
-        initializeCameraRotation()
+        if player:GetAttribute("NoRespawn") then
+            setSpectatorCamera()
+        else
+            local newHead = newCharacter:WaitForChild("Head")
+            camera.CameraSubject = newHead
+            initializeCameraRotation()
+        end
     end)
     
     print("Enhanced Camera System initialized - Distance:", distance, "(0.5 = first-person with bobbing/sway, higher = third-person)")
@@ -400,6 +426,18 @@ end
 
 function CameraSystem:StopCameraSway()
     print("Camera sway not implemented in this camera system")
+end
+
+function CameraSystem:ZoomIn()
+    if fovTween then fovTween:Cancel() end
+    fovTween = TweenService:Create(camera, TweenInfo.new(ZOOM_IN_TIME, Enum.EasingStyle.Sine, Enum.EasingDirection.Out), {FieldOfView = ZOOMED_FOV})
+    fovTween:Play()
+end
+
+function CameraSystem:ZoomOut()
+    if fovTween then fovTween:Cancel() end
+    fovTween = TweenService:Create(camera, TweenInfo.new(ZOOM_OUT_TIME, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {FieldOfView = DEFAULT_FOV})
+    fovTween:Play()
 end
 
 -- Cleanup function

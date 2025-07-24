@@ -169,6 +169,11 @@ local systemInitializationOrder = {
         module = require(script.UI.Hotbar),
         maxRetries = 2
     },
+    {
+        name = "ClockUI",
+        module = require(script.UI.Clock),
+        maxRetries = 2
+    },
     
     {
         name = "ItemDetailUI",
@@ -262,80 +267,93 @@ local function setupBossConnections()
             warn("BossHealthUI not found in global scope")
         end
         
-        -- Boss landed screen shake and health bar connection
-        RemoteEvents.BossLanded.OnClientEvent:Connect(function(bossData)
-            print("Boss landed! Triggering screen shake and showing health bar.")
-            
-            -- Trigger screen shake
-            local cameraSystem = _G.CameraSystem
-            if cameraSystem then
-                cameraSystem:StartShake(3.0, 1.0, 30)
-            else
-                warn("CameraSystem not found for screen shake")
-            end
-            
-            -- Show boss health bar with boss data
-            if BossHealthUI then
-                local health = (bossData and bossData.health) or 1000
-                local maxHealth = (bossData and bossData.maxHealth) or 1000
-                local name = (bossData and bossData.name) or "Boss"
-                BossHealthUI:Show(health, maxHealth, name)
-            end
-        end)
+        -- Check if RemoteEvents exist before connecting
+        if RemoteEvents.BossLanded then
+            -- Boss landed screen shake and health bar connection
+            RemoteEvents.BossLanded.OnClientEvent:Connect(function(bossData)
+                print("Boss landed! Triggering screen shake and showing health bar.")
+                
+                -- Trigger screen shake
+                local cameraSystem = _G.CameraSystem
+                if cameraSystem then
+                    cameraSystem:StartShake(3.0, 1.0, 30)
+                else
+                    warn("CameraSystem not found for screen shake")
+                end
+                
+                -- Show boss health bar with boss data
+                if BossHealthUI then
+                    local health = (bossData and bossData.health) or 1000
+                    local maxHealth = (bossData and bossData.maxHealth) or 1000
+                    local name = (bossData and bossData.name) or "Boss"
+                    BossHealthUI:Show(health, maxHealth, name)
+                end
+            end)
+        else
+            warn("BossLanded RemoteEvent not found")
+        end
         
         -- Boss health update connection
-        RemoteEvents.BossHealthUpdate.OnClientEvent:Connect(function(healthData)
-            if BossHealthUI and BossHealthUI:IsVisible() then
-                BossHealthUI:UpdateHealth(healthData.health, healthData.maxHealth)
-            end
-        end)
+        if RemoteEvents.BossHealthUpdate then
+            RemoteEvents.BossHealthUpdate.OnClientEvent:Connect(function(healthData)
+                if BossHealthUI and BossHealthUI:IsVisible() then
+                    BossHealthUI:UpdateHealth(healthData.health, healthData.maxHealth)
+                end
+            end)
+        else
+            warn("BossHealthUpdate RemoteEvent not found")
+        end
         
         -- Boss ability visual effects connection with batch support
-        bossAbilitiesRemote.OnClientEvent:Connect(function(abilityData)
-            -- PERFORMANCE OPTIMIZATION: Handle batched events
-            if abilityData.isBatch and abilityData.batchedEvents then
-                -- Process all events in the batch
-                for _, event in ipairs(abilityData.batchedEvents) do
-                    if event.abilityType == "trackingShot" then
-                        if event.phase == "missile" then
-                            abilityRenderers.MissileRenderer.handleMissile(event)
-                        else
-                            abilityRenderers.LaserEyeRenderer.handleLaserUpdate(event)
+        if bossAbilitiesRemote then
+            bossAbilitiesRemote.OnClientEvent:Connect(function(abilityData)
+                -- PERFORMANCE OPTIMIZATION: Handle batched events
+                if abilityData.isBatch and abilityData.batchedEvents then
+                    -- Process all events in the batch
+                    for _, event in ipairs(abilityData.batchedEvents) do
+                        if event.abilityType == "trackingShot" then
+                            if event.phase == "missile" then
+                                abilityRenderers.MissileRenderer.handleMissile(event)
+                            else
+                                abilityRenderers.LaserEyeRenderer.handleLaserUpdate(event)
+                            end
+                        elseif event.abilityType == "orbitalStrike" then
+                            abilityRenderers.OrbitalStrikeRenderer.handleOrbitalStrike(event)
+                        elseif event.abilityType == "rippleSquares" then
+                            abilityRenderers.RippleSquareRenderer.handleRippleSquares(event)
                         end
-                    elseif event.abilityType == "orbitalStrike" then
-                        abilityRenderers.OrbitalStrikeRenderer.handleOrbitalStrike(event)
-                    elseif event.abilityType == "rippleSquares" then
-                        abilityRenderers.RippleSquareRenderer.handleRippleSquares(event)
+                    end
+                else
+                    -- Handle single event (immediate or unbatched)
+                    if abilityData.abilityType == "trackingShot" then
+                        if abilityData.phase == "missile" then
+                            abilityRenderers.MissileRenderer.handleMissile(abilityData)
+                        else
+                            abilityRenderers.LaserEyeRenderer.handleLaserUpdate(abilityData)
+                        end
+                    elseif abilityData.abilityType == "orbitalStrike" then
+                        abilityRenderers.OrbitalStrikeRenderer.handleOrbitalStrike(abilityData)
+                    elseif abilityData.abilityType == "rippleSquares" then
+                        abilityRenderers.RippleSquareRenderer.handleRippleSquares(abilityData)
+                    elseif abilityData.abilityType == "bossSpawned" then
+                        print("Boss spawned - showing boss UI")
+                    elseif abilityData.abilityType == "bossDestroyed" then
+                        print("Boss destroyed - hiding boss UI and health bar")
+                        abilityRenderers.LaserEyeRenderer.cleanup()
+                        abilityRenderers.MissileRenderer.cleanup()
+                        abilityRenderers.OrbitalStrikeRenderer.cleanup()
+                        abilityRenderers.RippleSquareRenderer.cleanup()
+                        
+                        -- Hide boss health bar
+                        if BossHealthUI then
+                            BossHealthUI:Hide()
+                        end
                     end
                 end
-            else
-                -- Handle single event (immediate or unbatched)
-                if abilityData.abilityType == "trackingShot" then
-                    if abilityData.phase == "missile" then
-                        abilityRenderers.MissileRenderer.handleMissile(abilityData)
-                    else
-                        abilityRenderers.LaserEyeRenderer.handleLaserUpdate(abilityData)
-                    end
-                elseif abilityData.abilityType == "orbitalStrike" then
-                    abilityRenderers.OrbitalStrikeRenderer.handleOrbitalStrike(abilityData)
-                elseif abilityData.abilityType == "rippleSquares" then
-                    abilityRenderers.RippleSquareRenderer.handleRippleSquares(abilityData)
-                elseif abilityData.abilityType == "bossSpawned" then
-                    print("Boss spawned - showing boss UI")
-                elseif abilityData.abilityType == "bossDestroyed" then
-                    print("Boss destroyed - hiding boss UI and health bar")
-                    abilityRenderers.LaserEyeRenderer.cleanup()
-                    abilityRenderers.MissileRenderer.cleanup()
-                    abilityRenderers.OrbitalStrikeRenderer.cleanup()
-                    abilityRenderers.RippleSquareRenderer.cleanup()
-                    
-                    -- Hide boss health bar
-                    if BossHealthUI then
-                        BossHealthUI:Hide()
-                    end
-                end
-            end
-        end)
+            end)
+        else
+            warn("BossAbilities RemoteEvent not found")
+        end
         
         print("✅ Boss system connections established")
     end)

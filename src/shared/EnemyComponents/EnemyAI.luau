@@ -7,5 +7,6 @@ return {
     detectionRange = 30, -- How far enemy can detect players
     attackRange = 5, -- How close needed to attack
     speed = 16, -- Movement speed
-    homePosition = Vector3.new(0,0,0), -- Starting position for patrol
+    homePosition = Vector3.new(0,0,0), -- Starting position for patrol (set by spawn system)
+    patrolRadius = 30, -- Maximum distance from homePosition during patrol
 }

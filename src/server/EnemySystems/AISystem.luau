@@ -349,23 +349,30 @@ function AISystem._moveToPlayerWithZones(entityId, playerData, currentDistance, 
 	end
 end
 
--- Set random patrol target (simplified for testing)
+-- Set random patrol target (constrained to home position radius)
 function AISystem._setRandomPatrolTarget(entityId, currentPos)
 	local model = EntityManager.getComponent(entityId, "Model")
-	if not model or not model.humanoid or not model.humanoid.Parent then
+	local enemyAI = EntityManager.getComponent(entityId, "EnemyAI")
+	if not model or not model.humanoid or not model.humanoid.Parent or not enemyAI then
 		return
 	end
 	
-	-- Simple random patrol movement
+	-- Get home position (spawner location) and patrol radius
+	local homePosition = enemyAI.homePosition or currentPos
+	local patrolRadius = enemyAI.patrolRadius or 30 -- Default 30 studs from spawner
+	
+	-- Generate random patrol target within patrol radius of home position
 	local angle = math.random() * 2 * math.pi
-	local distance = math.random(10, 20)
-	local targetPos = currentPos + Vector3.new(
+	local distance = math.random(5, patrolRadius) -- Random distance within patrol radius
+	local targetPos = homePosition + Vector3.new(
 		math.cos(angle) * distance,
 		0,
 		math.sin(angle) * distance
 	)
 	
 	model.humanoid:MoveTo(targetPos)
+	
+	print("🚶 Entity", entityId, "patrolling to", tostring(targetPos), "within", patrolRadius, "studs of home", tostring(homePosition))
 end
 
 -- Update player positions

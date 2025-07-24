@@ -14,6 +14,8 @@ local DragServerSystem = require(ServerSystems.DragServerSystem)
 local InventoryServerSystem = require(ServerSystems.InventoryServerSystem)
 local ArmorServerSystem = require(ServerSystems.ArmorServerSystem)
 local DamageSystem = require(ServerSystems.DamageSystem)
+local TimeManager = require(ServerSystems.TimeManager)
+local PlayerRagdollSystem = require(ServerSystems.PlayerRagdollSystem)
 
 -- Import dialogue systems
 local NPCManager = require(script.NPCManager)
@@ -26,11 +28,13 @@ local BossController = require(script.BossSystem.BossController)
 print("Server starting...")
 
 -- Initialize server systems
-ItemSpawnSystem:Initialize()
+-- ItemSpawnSystem:Initialize()
 DragServerSystem:Initialize()
 InventoryServerSystem:Initialize()
 ArmorServerSystem:Initialize()
 DamageSystem:Initialize()
+TimeManager.Init()
+PlayerRagdollSystem:Initialize()
 
 -- Set up global references for inter-system communication
 _G.ItemSpawnSystem = ItemSpawnSystem
@@ -81,6 +85,10 @@ local SpawnerSetup = require(script.SpawnerSetup)
 
 -- Initialize spawners BEFORE starting enemy systems
 SpawnerSetup.initializeAllSpawners()
+
+-- Initialize item spawners (pool-based)
+local ItemPoolSpawnSystem = require(ServerSystems.ItemSpawnSystem)
+ItemPoolSpawnSystem.spawnAllItems()
 
 _G.EnemySystemInitializer = EnemySystemInitializer
 _G.SpawnerSetup = SpawnerSetup

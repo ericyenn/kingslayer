@@ -153,28 +153,28 @@ function DragSystem:RaycastFromMouse()
 end
 
 function DragSystem:IsObjectDraggable(object)
-    return CollectionService:HasTag(object, Constants.TAGS.DRAGGABLE_ITEM)
+    -- Support both items and ragdoll models
+    local isModel = object.Parent and CollectionService:HasTag(object.Parent, "Draggable")
+    return CollectionService:HasTag(object, Constants.TAGS.DRAGGABLE_ITEM) or isModel
 end
 
 function DragSystem:StartHover(object)
-    -- Add highlight effect
+    -- Highlight the correct object (parent if model, else self)
+    local isModel = object.Parent and CollectionService:HasTag(object.Parent, "Draggable")
+    local highlightTarget = isModel and object.Parent or object
     local highlight = Instance.new("Highlight")
     highlight.FillColor = Constants.HOVER.HIGHLIGHT_COLOR
     highlight.FillTransparency = 0.5
     highlight.OutlineColor = Constants.HOVER.HIGHLIGHT_COLOR
     highlight.OutlineTransparency = 0
-    highlight.Parent = object
+    highlight.Parent = highlightTarget
     highlight.Name = "DragHoverHighlight"
     
     -- Show enhanced tooltip with name and description
     local ItemTooltip = require(script.Parent.Parent.UI.ItemTooltip)
     local mouse = player:GetMouse()
-    
-    -- Get item name and description from CollectionService or a way to identify the item
-    local itemName = object.Name
+    local itemName = highlightTarget.Name
     local itemDescription = "No description available"
-    
-    -- Try to find the item definition to get the description
     local ItemDefinitions = require(ReplicatedStorage.Shared.ItemDefinitions)
     for itemId, definition in pairs(ItemDefinitions.items) do
         if definition.name == itemName then
@@ -182,23 +182,25 @@ function DragSystem:StartHover(object)
             break
         end
     end
-    
     ItemTooltip:ShowTooltip(itemName, itemDescription, Vector2.new(mouse.X, mouse.Y))
-    
-    print("Started hovering:", object.Name)
+    print("Started hovering:", highlightTarget.Name)
 end
 
 function DragSystem:StopHover(object)
-    -- Remove highlight effect
+    -- Remove highlight effect from both object and its parent (if model)
     local highlight = object:FindFirstChild("DragHoverHighlight")
     if highlight then
         highlight:Destroy()
     end
-    
+    if object.Parent then
+        local parentHighlight = object.Parent:FindFirstChild("DragHoverHighlight")
+        if parentHighlight then
+            parentHighlight:Destroy()
+        end
+    end
     -- Hide tooltip
     local ItemTooltip = require(script.Parent.Parent.UI.ItemTooltip)
     ItemTooltip:HideTooltip()
-    
     print("Stopped hovering:", object.Name)
 end
 

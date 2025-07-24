@@ -43,6 +43,23 @@ function MeleeChaseHandler.handleChase(entityId, enemyAI, model, closestPlayer, 
     local attackRange = enemyAI.attackRange or CONFIG.ATTACK_RANGE
     local detectionRange = enemyAI.detectionRange or CONFIG.DETECTION_RANGE
     
+    -- Ensure Combat component exists when chasing
+    local combat = EntityManager.getComponent(entityId, "Combat")
+    if not combat then
+        -- Try to get config from EnemyType or EnemyAI
+        local enemyType = EntityManager.getComponent(entityId, "EnemyType")
+        local damage = (enemyType and enemyType.config and enemyType.config.damage) or 10
+        local attackCooldown = (enemyType and enemyType.config and enemyType.config.attackSpeed) and (1 / enemyType.config.attackSpeed) or 1
+        local attackRangeVal = (enemyType and enemyType.config and enemyType.config.attackRange) or attackRange or 5
+        EntityManager.addComponent(entityId, "Combat", Components.create("Combat", {
+            damage = damage,
+            attackCooldown = attackCooldown,
+            attackRange = attackRangeVal
+        }))
+        -- Optionally, debug print
+        -- print("[Debug] Created Combat component for entity", entityId, "on chase start")
+    end
+    
     -- Check if we should give up chase (melee enemies are more persistent)
     if not closestPlayer then
         return "idle"  -- Lost target
@@ -116,18 +133,21 @@ end
 function MeleeChaseHandler._handleContinuousAttack(entityId, closestPlayer, currentTime)
     local combat = EntityManager.getComponent(entityId, "Combat")
     if not combat then
-        -- Create fallback combat component
+        -- Create fallback combat component silently (no warning)
         local enemyAI = EntityManager.getComponent(entityId, "EnemyAI")
-        local attackRange = enemyAI and enemyAI.attackRange or 5
-        
-        warn("⚠️ No Combat component found for melee entity", entityId, "- creating default one")
+        local enemyType = EntityManager.getComponent(entityId, "EnemyType")
+        local attackRange = (enemyType and enemyType.config and enemyType.config.attackRange) or (enemyAI and enemyAI.attackRange) or 5
+        local damage = (enemyType and enemyType.config and enemyType.config.damage) or 10
+        local attackCooldown = (enemyType and enemyType.config and enemyType.config.attackSpeed) and (1 / enemyType.config.attackSpeed) or 1
         EntityManager.addComponent(entityId, "Combat", Components.create("Combat", {
             target = closestPlayer.entity,
-            damage = 10,
+            damage = damage,
             lastAttackTime = currentTime,
-            attackRange = attackRange
+            attackRange = attackRange,
+            attackCooldown = attackCooldown
         }))
-        print("🗡️ Created fallback Combat component for melee entity", entityId)
+        -- Optionally, debug print
+        -- print("[Debug] Silently created fallback Combat component for entity", entityId)
         combat = EntityManager.getComponent(entityId, "Combat")
     end
     

@@ -4,13 +4,14 @@ local Hotbar = {}
 local Players = game:GetService("Players")
 local TweenService = game:GetService("TweenService")
 local UserInputService = game:GetService("UserInputService")
+local Lighting = game:GetService("Lighting")
 
 local player = Players.LocalPlayer
 local playerGui = player:WaitForChild("PlayerGui")
 
 -- Configuration (easily changeable)
 local SLOT_COUNT = 10
-local SLOT_SIZE = 50
+local SLOT_SIZE = math.floor(50 * 1.3) -- 30% bigger
 local SLOT_SPACING = 5
 local HOTBAR_PADDING = 10
 
@@ -26,6 +27,9 @@ local dragState = {
     dragPreview = nil,
     originalPosition = nil
 }
+
+-- Add at the top of the file:
+local hoveredSlotIndex = nil
 
 -- ENHANCED: Track all connections for cleanup
 local globalConnections = {}
@@ -45,30 +49,29 @@ function Hotbar:CreateHotbarUI()
     screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
     screenGui.Parent = playerGui
     
-    -- Calculate hotbar dimensions
+    -- Add centered label above hotbar
     local hotbarWidth = (SLOT_SIZE * SLOT_COUNT) + (SLOT_SPACING * (SLOT_COUNT - 1)) + (HOTBAR_PADDING * 2)
+    local label = Instance.new("TextLabel")
+    label.Name = "HotbarHintLabel"
+    label.Size = UDim2.new(0, hotbarWidth, 0, 22)
+    label.Position = UDim2.new(0.5, -hotbarWidth/2, 1, -(SLOT_SIZE + HOTBAR_PADDING + 18))
+    label.BackgroundTransparency = 1
+    label.Text = "(G) to open the menu"
+    label.TextColor3 = Color3.fromRGB(255, 255, 255)
+    label.TextStrokeTransparency = 0.6
+    label.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
+    label.TextSize = 14
+    label.Font = Enum.Font.Gotham
+    label.TextXAlignment = Enum.TextXAlignment.Center
+    label.TextYAlignment = Enum.TextYAlignment.Center
+    label.FontFace = Font.new("rbxasset://fonts/families/GothamSSm.json", Enum.FontWeight.SemiBold, Enum.FontStyle.Italic)
+    label.Parent = screenGui
+    
+    -- Calculate hotbar dimensions
     local hotbarHeight = SLOT_SIZE + (HOTBAR_PADDING * 2)
     
-    -- Create hotbar frame
-    hotbarFrame = Instance.new("Frame")
-    hotbarFrame.Name = "HotbarFrame"
-    hotbarFrame.Size = UDim2.new(0, hotbarWidth, 0, hotbarHeight)
-    hotbarFrame.Position = UDim2.new(0.5, -hotbarWidth/2, 1, -hotbarHeight - 20) -- Bottom center
-    hotbarFrame.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
-    hotbarFrame.BackgroundTransparency = 0.2
-    hotbarFrame.BorderSizePixel = 0
-    hotbarFrame.Parent = screenGui
-    
-    -- Add corner rounding
-    local corner = Instance.new("UICorner")
-    corner.CornerRadius = UDim.new(0, 8)
-    corner.Parent = hotbarFrame
-    
-    -- Add border
-    local stroke = Instance.new("UIStroke")
-    stroke.Color = Color3.fromRGB(100, 100, 100)
-    stroke.Thickness = 2
-    stroke.Parent = hotbarFrame
+    -- Remove hotbarFrame and its styling
+    -- All slots will be parented directly to screenGui
     
     -- Create slots
     for i = 1, SLOT_COUNT do
@@ -77,27 +80,34 @@ function Hotbar:CreateHotbarUI()
 end
 
 function Hotbar:CreateSlot(slotNumber)
-    local xOffset = HOTBAR_PADDING + ((slotNumber - 1) * (SLOT_SIZE + SLOT_SPACING))
+    local hotbarWidth = (SLOT_SIZE * SLOT_COUNT) + (SLOT_SPACING * (SLOT_COUNT - 1))
+    local slotX = -hotbarWidth/2 + ((slotNumber - 1) * (SLOT_SIZE + SLOT_SPACING))
     
-    -- Slot frame
-    local slotFrame = Instance.new("Frame")
-    slotFrame.Name = "Slot" .. slotNumber
-    slotFrame.Size = UDim2.new(0, SLOT_SIZE, 0, SLOT_SIZE)
-    slotFrame.Position = UDim2.new(0, xOffset, 0, HOTBAR_PADDING)
-    slotFrame.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
-    slotFrame.BorderSizePixel = 0
-    slotFrame.Parent = hotbarFrame
+    -- Slot image background (replace Frame with ImageLabel)
+    local slotImage = Instance.new("ImageLabel")
+    slotImage.Name = "Slot" .. slotNumber
+    slotImage.Size = UDim2.new(0, SLOT_SIZE, 0, SLOT_SIZE)
+    slotImage.Position = UDim2.new(0.5, slotX, 1, -(SLOT_SIZE // 4 + 52)) -- Keep same vertical offset logic
+    slotImage.BackgroundTransparency = 1
+    slotImage.Image = "rbxassetid://71503412974519"
+    slotImage.Parent = screenGui
     
-    -- Slot corner rounding
-    local slotCorner = Instance.new("UICorner")
-    slotCorner.CornerRadius = UDim.new(0, 4)
-    slotCorner.Parent = slotFrame
-    
-    -- Slot border (for equipped indication)
+    -- Slot border (for equipped/hovered indication)
     local slotStroke = Instance.new("UIStroke")
     slotStroke.Color = Color3.fromRGB(80, 80, 80)
     slotStroke.Thickness = 1
-    slotStroke.Parent = slotFrame
+    slotStroke.Parent = slotImage
+    
+    -- Light overlay (for equipped/hovered effect)
+    local overlay = Instance.new("Frame")
+    overlay.Name = "Overlay"
+    overlay.Size = UDim2.new(1, 0, 1, 0)
+    overlay.Position = UDim2.new(0, 0, 0, 0)
+    overlay.BackgroundColor3 = Color3.new(1, 1, 1)
+    overlay.BackgroundTransparency = 1 -- Default hidden
+    overlay.BorderSizePixel = 0
+    overlay.ZIndex = 3
+    overlay.Parent = slotImage
     
     -- Item name display (text label showing full item name)
     local itemIcon = Instance.new("TextLabel")
@@ -107,13 +117,13 @@ function Hotbar:CreateSlot(slotNumber)
     itemIcon.BackgroundTransparency = 1
     itemIcon.Text = ""
     itemIcon.TextColor3 = Color3.fromRGB(255, 255, 255)
-    itemIcon.TextSize = 8
-    itemIcon.Font = Enum.Font.SourceSans
+    itemIcon.TextSize = 12 -- Smaller font for item name
+    itemIcon.Font = Enum.Font.Gotham
     itemIcon.TextScaled = true
     itemIcon.TextWrapped = true
     itemIcon.TextXAlignment = Enum.TextXAlignment.Center
     itemIcon.TextYAlignment = Enum.TextYAlignment.Center
-    itemIcon.Parent = slotFrame
+    itemIcon.Parent = slotImage
     
     -- Slot number indicator
     local slotNumberLabel = Instance.new("TextLabel")
@@ -123,11 +133,11 @@ function Hotbar:CreateSlot(slotNumber)
     slotNumberLabel.BackgroundTransparency = 1
     slotNumberLabel.Text = tostring(slotNumber == 10 and 0 or slotNumber) -- Show 0 for slot 10
     slotNumberLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
-    slotNumberLabel.TextSize = 10
-    slotNumberLabel.Font = Enum.Font.SourceSans
+    slotNumberLabel.TextSize = 14 -- Smaller font for slot number
+    slotNumberLabel.Font = Enum.Font.Gotham
     slotNumberLabel.TextStrokeTransparency = 0
     slotNumberLabel.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
-    slotNumberLabel.Parent = slotFrame
+    slotNumberLabel.Parent = slotImage
     
     -- Drag detection button (invisible)
     local dragButton = Instance.new("TextButton")
@@ -136,15 +146,16 @@ function Hotbar:CreateSlot(slotNumber)
     dragButton.Position = UDim2.new(0, 0, 0, 0)
     dragButton.BackgroundTransparency = 1
     dragButton.Text = ""
-    dragButton.ZIndex = 2 -- Above other elements
-    dragButton.Parent = slotFrame
+    dragButton.ZIndex = 4 -- Above overlay
+    dragButton.Parent = slotImage
     
     -- Store slot reference
     slots[slotNumber] = {
-        frame = slotFrame,
+        frame = slotImage,
         icon = itemIcon,
         stroke = slotStroke,
         dragButton = dragButton,
+        overlay = overlay,
         slotNumber = slotNumber,
         isEmpty = true
     }
@@ -426,13 +437,15 @@ function Hotbar:UpdateDisplay(inventory, equippedSlot)
             slot.isEmpty = true
         end
         
-        -- Update equipped indicator
-        if equippedSlot == i then
-            slot.stroke.Color = Color3.fromRGB(255, 255, 0) -- Yellow for equipped
-            slot.stroke.Thickness = 3
+        -- Update equipped/hovered indicator
+        if equippedSlot == i or hoveredSlotIndex == i then
+            slot.stroke.Color = Color3.fromRGB(220, 220, 220) -- Slightly gray outline
+            slot.stroke.Thickness = 2 -- Slightly thicker outline
+            slot.overlay.BackgroundTransparency = 0.93 -- Even less bright overlay
         else
-            slot.stroke.Color = Color3.fromRGB(80, 80, 80) -- Default gray
+            slot.stroke.Color = Color3.fromRGB(80, 80, 80)
             slot.stroke.Thickness = 1
+            slot.overlay.BackgroundTransparency = 1 -- Hide overlay
         end
     end
 end
@@ -487,6 +500,9 @@ function Hotbar:Cleanup()
     dragState.draggedSlot = nil
     dragState.originalPosition = nil
     
+    -- Clear hoveredSlotIndex
+    hoveredSlotIndex = nil
+
     -- Clean up UI
     if screenGui then
         screenGui:Destroy()
@@ -496,5 +512,58 @@ function Hotbar:Cleanup()
     -- Clear slots
     slots = {}
 end
+
+-- Add this after Hotbar:Initialize()
+local ArmorMenu = require(script.Parent.ArmorMenu)
+local originalShow = ArmorMenu.Show
+function ArmorMenu:Show(...)
+    -- Add blur effect
+    if not Lighting:FindFirstChild("MenuBlur") then
+        local blur = Instance.new("BlurEffect")
+        blur.Name = "MenuBlur"
+        blur.Size = 18
+        blur.Parent = Lighting
+    end
+    return originalShow(self, ...)
+end
+
+local originalHide = ArmorMenu.Hide
+function ArmorMenu:Hide(...)
+    -- Remove blur effect
+    local blur = Lighting:FindFirstChild("MenuBlur")
+    if blur then
+        blur:Destroy()
+    end
+    return originalHide(self, ...)
+end
+
+UserInputService.InputChanged:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseMovement then
+        if ArmorMenu:IsVisible() then
+            local mousePos = input.Position
+            local found = nil
+            for i, slot in pairs(slots) do
+                if slot.frame.AbsolutePosition and slot.frame.AbsoluteSize then
+                    local pos = slot.frame.AbsolutePosition
+                    local size = slot.frame.AbsoluteSize
+                    if mousePos.X >= pos.X and mousePos.X <= pos.X + size.X and
+                       mousePos.Y >= pos.Y and mousePos.Y <= pos.Y + size.Y then
+                        found = i
+                        break
+                    end
+                end
+            end
+            if hoveredSlotIndex ~= found then
+                hoveredSlotIndex = found
+                Hotbar:UpdateDisplay(_G.InventorySystem and _G.InventorySystem:GetInventory() or {}, _G.InventorySystem and _G.InventorySystem:GetEquippedSlot() or nil)
+            end
+        else
+            if hoveredSlotIndex ~= nil then
+                hoveredSlotIndex = nil
+                Hotbar:UpdateDisplay(_G.InventorySystem and _G.InventorySystem:GetInventory() or {}, _G.InventorySystem and _G.InventorySystem:GetEquippedSlot() or nil)
+            end
+        end
+    end
+end)
 
 return Hotbar 

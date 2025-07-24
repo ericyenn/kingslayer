@@ -148,14 +148,25 @@ function ModelCreationSystem._createModelForEntity(entityId)
 		part = model.PrimaryPart or model:FindFirstChildWhichIsA("BasePart"),
 		humanoid = model:FindFirstChildOfClass("Humanoid")
 	}))
-	
-	-- Apply enemy-specific speed to humanoid
-	ModelCreationSystem._applyEnemyStatsToHumanoid(entityId, model)
-	
-	-- Load animations for the enemy
-	ModelCreationSystem._loadAnimationsForEntity(entityId, model)
-	
-	print("🎨 Created model '" .. modelName .. "' for", enemyType.enemyId, "entity", entityId, "at", groundPosition)
+
+    -- Apply enemy-specific speed to humanoid
+    ModelCreationSystem._applyEnemyStatsToHumanoid(entityId, model)
+
+    -- Load animations for the enemy
+    ModelCreationSystem._loadAnimationsForEntity(entityId, model)
+
+    -- Ragdoll system: connect Humanoid.Died event for all enemies
+    local humanoid = model:FindFirstChildOfClass("Humanoid")
+    if humanoid then
+        -- Tutorial: Set BreakJointsOnDeath and RequiresNeck to false for basic ragdoll
+        humanoid.BreakJointsOnDeath = false
+        humanoid.RequiresNeck = false
+        humanoid.Died:Connect(function()
+            onDeathOfTheEnemy(model)
+        end)
+    end
+
+    print("🎨 Created model '" .. modelName .. "' for", enemyType.enemyId, "entity", entityId, "at", groundPosition)
 	end
 end
 
@@ -397,6 +408,50 @@ function ModelCreationSystem._playEnemyAnimation(model, animName)
 		
 		print("🎭 Entity", animState.entityId, "playing", animName, "animation (movement-driven)")
 	end
+end
+
+-- Add ragdoll logic for all enemies
+local CollectionService = game:GetService("CollectionService")
+
+function onDeathOfTheEnemy(enemy)
+    local humanoid = enemy:FindFirstChildOfClass("Humanoid")
+    if not humanoid then return end
+    -- Hide health bar
+    humanoid.DisplayDistanceType = Enum.HumanoidDisplayDistanceType.None
+    -- Prevent standing up
+    humanoid.PlatformStand = true
+    -- Replace Motor6Ds with BallSocketConstraints (except Neck)
+    local torso = enemy:FindFirstChild("Torso")
+    if torso then
+        for _, joint in ipairs(torso:GetChildren()) do
+            if joint:IsA("Motor6D") and joint.Name ~= "Neck" then
+                createSocket(torso, joint.Part1, joint.C0, joint.C1)
+                joint:Destroy()
+            end
+        end
+    end
+    -- Tag as Draggable
+    CollectionService:AddTag(enemy, "Draggable")
+end
+
+function createSocket(torso, part, c0, c1)
+    local ballSocket = Instance.new("BallSocketConstraint")
+    ballSocket.Name = part.Name .. "Socket"
+    -- Attachments
+    local attachment0 = createAttachment(torso, c0)
+    local attachment1 = createAttachment(part, c1)
+    ballSocket.Attachment0 = attachment0
+    ballSocket.Attachment1 = attachment1
+    -- Optionally configure limits here if desired
+    ballSocket.Parent = torso
+end
+
+function createAttachment(part, cframeOffset)
+    local attachment = Instance.new("Attachment")
+    attachment.Name = part.Name .. "Attachment"
+    attachment.CFrame = cframeOffset
+    attachment.Parent = part
+    return attachment
 end
 
 return ModelCreationSystem 

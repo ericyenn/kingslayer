@@ -97,9 +97,11 @@ function EnemySpawnSystem.update(deltaTime)
 			
 			if not anyPlayerNearby then
 				-- Skip this spawner - no players nearby
-		elseif os.clock() - spawner.lastSpawnTime < spawner.cooldown then
-			-- Skip this entity - still in cooldown
-		else
+			elseif spawner.spawnType == "once" and spawner.hasSpawned then
+				-- Skip this spawner - one-time spawner has already activated
+			elseif spawner.spawnType == "continuous" and os.clock() - spawner.lastSpawnTime < spawner.cooldown then
+				-- Skip this spawner - continuous spawner still in cooldown
+			else
 
 		-- Clear out any dead entities from the spawner's list
 		for i = #spawner.spawnedEntities, 1, -1 do
@@ -158,6 +160,14 @@ function EnemySpawnSystem.update(deltaTime)
 					EntityManager.addComponent(newEnemyId, "SpawnPosition", 
 						{value = spawnPosition})
 					
+					-- Set homePosition to spawner center for patrol boundaries
+					if enemyComponents.EnemyAI then
+						enemyComponents.EnemyAI.homePosition = spawner.centerPosition
+					end
+					
+					-- Add EnemyChat component for enemy chat functionality
+					enemyComponents.EnemyChat = Components.create("EnemyChat")
+					
 					-- Add all enemy components
 					print("🔧 Adding components for entity", newEnemyId, ":")
 					for componentType, componentData in pairs(enemyComponents) do
@@ -168,10 +178,11 @@ function EnemySpawnSystem.update(deltaTime)
 					table.insert(spawner.spawnedEntities, newEnemyId)
 					spawnedCount = spawnedCount + 1
 					
-					print(string.format("🎯 Spawned %s (%s) at %s (player nearby)", 
+					print(string.format("🎯 Spawned %s (%s) at %s (spawner type: %s)", 
 						enemyId, 
 						enemyComponents.enemyType or "unknown",
-						tostring(spawnPosition)))
+						tostring(spawnPosition),
+						spawner.spawnType or "unknown"))
 					
 					-- Debug: Print enemy stats for verification
 					local enemyDef = EnemyDefinitions:GetEnemy(enemyId)
@@ -190,8 +201,16 @@ function EnemySpawnSystem.update(deltaTime)
 		end
 
 		if spawnedCount > 0 then
-			-- Update spawner's last spawn time
-			spawner.lastSpawnTime = os.clock()
+			-- Update spawner state based on type
+			if spawner.spawnType == "once" then
+				-- Mark one-time spawner as having spawned
+				spawner.hasSpawned = true
+				print("🎯 One-time spawner", entityId, "has completed spawning and is now inactive")
+			elseif spawner.spawnType == "continuous" then
+				-- Update continuous spawner's last spawn time
+				spawner.lastSpawnTime = os.clock()
+			end
+			
 			EntityManager.addComponent(entityId, "Spawner", spawner)
 			spawnsProcessed = spawnsProcessed + 1
 		end

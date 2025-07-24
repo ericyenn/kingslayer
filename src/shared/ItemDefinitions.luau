@@ -23,9 +23,9 @@ end
 ItemDefinitions.items = {
     -- TOOLS - All use generic attack action with different damage
     stick = {
-        name = "Stick",
-        description = "A simple wooden stick. Basic weapon for combat.",
-        model = "StickModel",
+        name = "Cane",
+        description = "Just a stick for walking. Not meant for combat, but will do.",
+        model = "CaneModel",
         category = Categories.Tool,
         actionType = ActionConstants.Tool.ATTACK,
         actionData = {
@@ -40,8 +40,8 @@ ItemDefinitions.items = {
                 dampening = 0.6
             },
             Hoverable = {
-                displayName = "Stick",
-                description = "A simple wooden stick. Basic weapon for combat."
+                displayName = "Walking Stick",
+                description = "Just a stick for walking. Not meant for combat, but will do."
             },
             Inventoryable = {
                 inventoryIcon = "🪵"

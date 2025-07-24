@@ -43,53 +43,78 @@ function DragServerSystem:HandlePickup(player, object)
     if draggedObjects[object] then
         return false, "Object already being dragged"
     end
-    
-    -- Check if object can be dragged (has the tag)
+    -- Check if object can be dragged (has the tag or parent is Draggable model)
     local CollectionService = game:GetService("CollectionService")
     local Constants = require(ReplicatedStorage.Shared.Constants)
-    
-    if not CollectionService:HasTag(object, Constants.TAGS.DRAGGABLE_ITEM) then
+    local isModel = object.Parent and CollectionService:HasTag(object.Parent, "Draggable")
+    if not (CollectionService:HasTag(object, Constants.TAGS.DRAGGABLE_ITEM) or isModel) then
         return false, "Object not draggable"
     end
-    
-    -- Set network ownership to the player
-    local success, error = pcall(function()
-        object:SetNetworkOwner(player)
-    end)
-    
-    if not success then
-        warn("Failed to set network owner:", error)
-        return false, "Failed to set network ownership"
+    -- If it's a model, always drag the model itself
+    if isModel then
+        object = object.Parent
+        -- Find the part to set network ownership on
+        local mainPart = object.PrimaryPart or object:FindFirstChild("Torso") or object:FindFirstChild("HumanoidRootPart")
+        if not mainPart then
+            return false, "No suitable part to set network ownership"
+        end
+        -- Set network ownership to the player
+        local success, error = pcall(function()
+            mainPart:SetNetworkOwner(player)
+        end)
+        if not success then
+            warn("Failed to set network owner:", error)
+            return false, "Failed to set network ownership"
+        end
+    else
+        -- Set network ownership to the player for regular parts
+        local success, error = pcall(function()
+            object:SetNetworkOwner(player)
+        end)
+        if not success then
+            warn("Failed to set network owner:", error)
+            return false, "Failed to set network ownership"
+        end
     end
-    
     -- Mark as being dragged
     draggedObjects[object] = player.UserId
     object:SetAttribute("DraggedBy", player.UserId)
-    
     print("Player", player.Name, "picked up", object.Name)
     return true, "Pickup successful"
 end
 
 function DragServerSystem:HandleDrop(player, object)
+    -- Find the actual dragged object (could be the object itself or its parent model)
+    local actualObject = object
+    for draggedObj, userId in pairs(draggedObjects) do
+        if userId == player.UserId then
+            -- Check if this is the object or if object is a child of the dragged model
+            if draggedObj == object or (draggedObj:IsA("Model") and object.Parent == draggedObj) then
+                actualObject = draggedObj
+                break
+            end
+        end
+    end
+    
     -- Check if player owns this object
-    if draggedObjects[object] ~= player.UserId then
+    if draggedObjects[actualObject] ~= player.UserId then
         return false, "You don't own this object"
     end
     
     -- Remove from dragged objects
-    draggedObjects[object] = nil
-    object:SetAttribute("DraggedBy", nil)
+    draggedObjects[actualObject] = nil
+    actualObject:SetAttribute("DraggedBy", nil)
     
     -- Reset network ownership to server
     local success, error = pcall(function()
-        object:SetNetworkOwner(nil)
+        actualObject:SetNetworkOwner(nil)
     end)
     
     if not success then
         warn("Failed to reset network owner:", error)
     end
     
-    print("Player", player.Name, "dropped", object.Name)
+    print("Player", player.Name, "dropped", actualObject.Name)
     return true, "Drop successful"
 end
 
