@@ -142,10 +142,11 @@ function InventoryServerSystem:PickupToInventory(player, object, slot)
     
     -- Store item information
     local itemIcon = self:GetItemIcon(object)
+    local originalCFrame = object:IsA("Model") and object.PrimaryPart and object.PrimaryPart.CFrame or object.CFrame
     local itemInfo = {
         object = object,
         itemName = object.Name,
-        originalCFrame = object.CFrame,
+        originalCFrame = originalCFrame,
         originalParent = object.Parent,
         icon = itemIcon
     }
@@ -153,9 +154,40 @@ function InventoryServerSystem:PickupToInventory(player, object, slot)
     -- Add to player's inventory
     playerInventories[player][slot] = itemInfo
     
+    -- Reset network ownership before moving to ReplicatedStorage
+    -- This prevents issues with models that had network ownership set during dragging
+    local success, error = pcall(function()
+        if object:IsA("Model") then
+            -- For models, reset network ownership on the primary part
+            local mainPart = object.PrimaryPart or object:FindFirstChild("Torso") or object:FindFirstChild("HumanoidRootPart")
+            if mainPart then
+                mainPart:SetNetworkOwner(nil)
+            end
+        else
+            -- For regular parts, reset network ownership directly
+            object:SetNetworkOwner(nil)
+        end
+    end)
+    
+    if not success then
+        warn("Failed to reset network ownership for", object.Name, ":", error)
+    end
+    
     -- Hide item from world (move to ReplicatedStorage for safekeeping)
     object.Parent = ReplicatedStorage
-    object.Anchored = true
+    
+    -- Anchor the object (handle both parts and models)
+    if object:IsA("Model") then
+        -- For models, anchor all parts
+        for _, part in ipairs(object:GetDescendants()) do
+            if part:IsA("BasePart") then
+                part.Anchored = true
+            end
+        end
+    else
+        -- For parts, anchor directly
+        object.Anchored = true
+    end
     
     -- WorldCleanupSystem removed - no longer needed
     
@@ -190,8 +222,18 @@ function InventoryServerSystem:DropFromInventory(player, slot)
     
     -- Return item to world
     object.Parent = workspace
-    object.CFrame = dropPosition
-    object.Anchored = false
+    if object:IsA("Model") and object.PrimaryPart then
+        object:SetPrimaryPartCFrame(dropPosition)
+        -- Ensure all parts are unanchored
+        for _, part in ipairs(object:GetDescendants()) do
+            if part:IsA("BasePart") then
+                part.Anchored = false
+            end
+        end
+    else
+        object.CFrame = dropPosition
+        object.Anchored = false
+    end
     
     -- Remove from inventory
     playerInventories[player][slot] = nil
@@ -246,7 +288,15 @@ function InventoryServerSystem:CanPlayerPickup(player, object)
         return false
     end
     
-    local distance = (character.HumanoidRootPart.Position - object.Position).Magnitude
+    -- Get the position to check distance from
+    local objectPosition
+    if object:IsA("Model") and object.PrimaryPart then
+        objectPosition = object.PrimaryPart.Position
+    else
+        objectPosition = object.Position
+    end
+    
+    local distance = (character.HumanoidRootPart.Position - objectPosition).Magnitude
     if distance > 15 then -- Same as drag detection distance
         return false
     end
@@ -273,13 +323,33 @@ function InventoryServerSystem:DropItemToWorld(player, object)
     if character and character:FindFirstChild("HumanoidRootPart") then
         local dropPosition = character.HumanoidRootPart.CFrame * CFrame.new(0, 0, -5)
         object.Parent = workspace
-        object.CFrame = dropPosition
-        object.Anchored = false
+        if object:IsA("Model") and object.PrimaryPart then
+            object:SetPrimaryPartCFrame(dropPosition)
+            -- Ensure all parts are unanchored
+            for _, part in ipairs(object:GetDescendants()) do
+                if part:IsA("BasePart") then
+                    part.Anchored = false
+                end
+            end
+        else
+            object.CFrame = dropPosition
+            object.Anchored = false
+        end
     else
         -- Fallback: drop at spawn location
         object.Parent = workspace
-        object.CFrame = CFrame.new(0, 10, 0)
-        object.Anchored = false
+        if object:IsA("Model") and object.PrimaryPart then
+            object:SetPrimaryPartCFrame(CFrame.new(0, 10, 0))
+            -- Ensure all parts are unanchored
+            for _, part in ipairs(object:GetDescendants()) do
+                if part:IsA("BasePart") then
+                    part.Anchored = false
+                end
+            end
+        else
+            object.CFrame = CFrame.new(0, 10, 0)
+            object.Anchored = false
+        end
     end
     
     -- WorldCleanupSystem removed - no longer needed
@@ -293,57 +363,79 @@ function InventoryServerSystem:GetPlayerEquippedSlot(player)
     return playerEquippedSlots[player]
 end
 
+-- Debug method to get player inventories
+function InventoryServerSystem:GetPlayerInventories()
+    return playerInventories
+end
+
 function InventoryServerSystem:CreateToolInCharacter(player, slot)
     local inventoryItem = playerInventories[player][slot]
-    
     if not inventoryItem or not inventoryItem.object then
         warn("Cannot create tool: invalid inventory item in slot", slot)
         return
     end
-    
     local character = player.Character
     if not character then
         warn("Cannot create tool: player has no character")
         return
     end
-    
     -- Remove any existing tool first
     self:RemoveToolFromCharacter(player)
-    
     local originalObject = inventoryItem.object
-    
     -- Create Tool object
     local tool = Instance.new("Tool")
     tool.Name = originalObject.Name
     tool.RequiresHandle = true
     tool.CanBeDropped = false -- Prevent default Roblox dropping
-    
-    -- Set grip properties to control tool orientation
-    tool.GripForward = Vector3.new(0, 1, 0)   -- Point upward
-    tool.GripRight = Vector3.new(0, 0, -1)    -- Keep right vector
-    tool.GripUp = Vector3.new(1, 0, 0)        -- What was forward is now up
-    tool.GripPos = Vector3.new(0, 0, 0)       -- Grip position offset
-    
-    -- Clone the original object as Handle
-    local handle = originalObject:Clone()
-    handle.Name = "Handle"
-    handle.Anchored = false
-    
-    -- Ensure handle has proper physics
-    if handle:IsA("BasePart") then
+    -- Use default grip orientation for natural tool positioning
+    tool.GripForward = Vector3.new(0, 1, 0)
+    tool.GripRight = Vector3.new(1, 0, -1)
+    tool.GripUp = Vector3.new(0, 0, -1)
+    tool.GripPos = Vector3.new(0, 0, 0)
+
+    local handle
+    if originalObject:IsA("Model") then
+        -- Clone the model
+        local modelClone = originalObject:Clone()
+        -- Find the part named 'Handle' inside the model
+        handle = modelClone:FindFirstChild("Handle")
+        if not handle or not handle:IsA("BasePart") then
+            warn("Model does not contain a BasePart named 'Handle'")
+            return
+        end
+        -- Parent the handle directly to the tool
+        handle.Parent = tool
+        -- Parent all other parts (that are welded) directly to the tool as well
+        for _, obj in ipairs(modelClone:GetChildren()) do
+            if obj ~= handle and obj:IsA("BasePart") then
+                obj.Parent = tool
+            end
+        end
+        -- Unanchor and set physics for all parts
+        for _, part in ipairs(tool:GetChildren()) do
+            if part:IsA("BasePart") then
+                part.Anchored = false
+                part.CanCollide = false
+                part.TopSurface = Enum.SurfaceType.Smooth
+                part.BottomSurface = Enum.SurfaceType.Smooth
+                part.CollisionGroup = "Default"
+            end
+        end
+    else
+        -- Single-part item
+        handle = originalObject:Clone()
+        handle.Name = "Handle"
+        handle.Anchored = false
         handle.CanCollide = false
         handle.TopSurface = Enum.SurfaceType.Smooth
         handle.BottomSurface = Enum.SurfaceType.Smooth
+        handle.CollisionGroup = "Default"
+        handle.Parent = tool
     end
-    
-    handle.Parent = tool
-    
     -- Add tool interaction script
     self:AddToolScript(tool)
-    
     -- Equip the tool
     tool.Parent = character
-    
     -- Store reference for cleanup
     inventoryItem.activeTool = tool
 end
@@ -532,6 +624,40 @@ function InventoryServerSystem:ConsumeItem(player, slot)
     print("Successfully consumed item:", inventoryItem.itemName, "for player", player.Name)
     print("DEBUG: Server returning success=true, message='Item consumed'")
     return true, "Item consumed"
+end
+
+-- Method to drop all items when player dies (without full cleanup)
+function InventoryServerSystem:DropAllItemsOnDeath(player)
+    if not playerInventories[player] then
+        return
+    end
+    
+    print("Dropping all items for dead player:", player.Name)
+    
+    -- Remove any equipped tool first
+    if playerEquippedSlots[player] then
+        self:RemoveToolFromCharacter(player)
+        playerEquippedSlots[player] = nil
+    end
+    
+    -- Drop all inventory items to world
+    for slot, inventoryItem in pairs(playerInventories[player]) do
+        if inventoryItem and inventoryItem.object then
+            pcall(function()
+                self:DropItemToWorld(player, inventoryItem.object)
+            end)
+        end
+    end
+    
+    -- Clear the inventory (but keep the player data structure)
+    for i = 1, 10 do
+        playerInventories[player][i] = nil
+    end
+    
+    -- Notify client of inventory update
+    RemoteEvents.UpdateInventory:FireClient(player, self:GetPlayerInventory(player))
+    
+    print("Successfully dropped all items for player:", player.Name)
 end
 
 -- REMOVED: Cleanup function - let Roblox handle object lifecycle
