@@ -16,6 +16,13 @@ local ArmorServerSystem = require(ServerSystems.ArmorServerSystem)
 local DamageSystem = require(ServerSystems.DamageSystem)
 local TimeManager = require(ServerSystems.TimeManager)
 local PlayerRagdollSystem = require(ServerSystems.PlayerRagdollSystem)
+local PlayerEffectsSystem = require(ServerSystems.PlayerEffectsSystem)
+local ReviveSystem = require(ServerSystems.ReviveSystem)
+
+-- Import altar systems
+local AltarSystem = require(ServerSystems.AltarSystem)
+local SacrificeValidator = require(ServerSystems.SacrificeValidator)
+local RewardProcessor = require(ServerSystems.RewardProcessor)
 
 -- Import dialogue systems
 local NPCManager = require(script.NPCManager)
@@ -35,11 +42,39 @@ ArmorServerSystem:Initialize()
 DamageSystem:Initialize()
 TimeManager.Init()
 PlayerRagdollSystem:Initialize()
+PlayerEffectsSystem:Initialize()
+ReviveSystem:Initialize()
+
+-- Initialize altar systems
+AltarSystem:Initialize()
+
+-- Set up ReviveSystem reference in PlayerRagdollSystem
+PlayerRagdollSystem:SetReviveSystem(ReviveSystem)
+
+-- Set up prayer handling
+local function handlePrayerRequest(player, figure)
+    print("Player", player.Name, "requested prayer to figure:", figure:GetFullName())
+    
+    local success, message = AltarSystem:HandlePrayer(player, figure)
+    if success then
+        print("Prayer successful for player:", player.Name)
+    else
+        print("Prayer failed for player:", player.Name, "-", message)
+    end
+end
+
+-- Connect the prayer request remote
+local prayerRequestRemote = ReplicatedStorage:FindFirstChild("PrayerRequest")
+if prayerRequestRemote then
+    prayerRequestRemote.OnServerEvent:Connect(handlePrayerRequest)
+    print("Prayer request remote connected")
+end
 
 -- Set up global references for inter-system communication
 _G.ItemSpawnSystem = ItemSpawnSystem
 _G.InventoryServerSystem = InventoryServerSystem
 _G.DamageSystem = DamageSystem
+_G.PlayerEffectsSystem = PlayerEffectsSystem
 
 -- Set up boss system RemoteEvent
 local BossAbilitiesRemote = Instance.new("RemoteEvent")
@@ -73,6 +108,19 @@ if spawnBossRemote then
     print("Boss spawn remote connected")
 end
 
+-- Set up respawn RemoteEvent
+local RequestRespawn = ReplicatedStorage:FindFirstChild("RequestRespawn")
+if not RequestRespawn then
+    RequestRespawn = Instance.new("RemoteEvent")
+    RequestRespawn.Name = "RequestRespawn"
+    RequestRespawn.Parent = ReplicatedStorage
+end
+RequestRespawn.OnServerEvent:Connect(function(player)
+    player:LoadCharacter()
+end)
+
+
+
 -- Initialize dialogue systems
 NPCManager:Initialize()
 DialogueHandler:SetNPCManager(NPCManager)
@@ -82,6 +130,10 @@ TraderHandler:Initialize()
 -- Initialize enemy systems (from stayalive-1 integration)
 local EnemySystemInitializer = require(script.EnemySystemInitializer)
 local SpawnerSetup = require(script.SpawnerSetup)
+
+-- Initialize projectile system
+local ProjectileManager = require(script.ProjectileManager)
+ProjectileManager.initialize()
 
 -- Initialize spawners BEFORE starting enemy systems
 SpawnerSetup.initializeAllSpawners()

@@ -66,7 +66,13 @@ function InventorySystem:HandleEKeyPress()
     local hoveredObject = self:GetCurrentHoveredObject()
     
     if hoveredObject then
+        print("DEBUG: Attempting to pickup object:", hoveredObject.Name)
+        print("DEBUG: Object type:", hoveredObject.ClassName)
+        print("DEBUG: Object parent:", hoveredObject.Parent and hoveredObject.Parent.Name or "nil")
+        print("DEBUG: Is model:", hoveredObject:IsA("Model"))
+        
         local canPickup = self:CanPickup(hoveredObject)
+        print("DEBUG: Can pickup:", canPickup)
         
         if canPickup then
             print("Attempting to pickup to inventory:", hoveredObject.Name)
@@ -92,19 +98,48 @@ end
 function InventorySystem:GetCurrentHoveredObject()
     -- Access the DragSystem's hovered object (minimal coupling)
     local DragSystem = require(script.Parent.DragSystem)
-    return DragSystem:GetHoveredObject()
+    local hoveredObject = DragSystem:GetHoveredObject()
+    
+    -- If we're hovering over a child part of a model, get the parent model instead
+    if hoveredObject and hoveredObject.Parent then
+        local CollectionService = game:GetService("CollectionService")
+        local Constants = require(ReplicatedStorage.Shared.Constants)
+        
+        -- Check if the parent is a draggable model
+        if CollectionService:HasTag(hoveredObject.Parent, Constants.TAGS.DRAGGABLE_ITEM) then
+            print("DEBUG: Converting child part to parent model:", hoveredObject.Name, "->", hoveredObject.Parent.Name)
+            return hoveredObject.Parent
+        end
+    end
+    
+    return hoveredObject
 end
 
 function InventorySystem:CanPickup(object)
     -- Check if object has Inventoryable component with canPickup = true
     local hasComponent = ECS:HasComponent(object, "Inventoryable")
+    print("DEBUG: Has Inventoryable component:", hasComponent)
     
-    if not hasComponent then 
-        return false 
+    if hasComponent then
+        local inventoryableComponent = ECS:GetComponent(object, "Inventoryable")
+        local canPickup = inventoryableComponent.canPickup == true
+        print("DEBUG: Component canPickup:", canPickup)
+        return canPickup
     end
     
-    local inventoryableComponent = ECS:GetComponent(object, "Inventoryable")
-    return inventoryableComponent.canPickup == true
+    -- Fallback: Check if object has DraggableItem tag
+    local CollectionService = game:GetService("CollectionService")
+    local Constants = require(ReplicatedStorage.Shared.Constants)
+    local hasTag = CollectionService:HasTag(object, Constants.TAGS.DRAGGABLE_ITEM)
+    print("DEBUG: Has DraggableItem tag:", hasTag)
+    
+    if hasTag then
+        print("DEBUG: Allowing pickup via tag fallback")
+        return true
+    end
+    
+    print("DEBUG: No valid pickup method found")
+    return false
 end
 
 function InventorySystem:PickupToInventory(object)

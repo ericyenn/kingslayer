@@ -22,10 +22,16 @@ end
 
 local EntityManager = require(ReplicatedStorage.Shared.EntityManager)
 
+-- Import rotation utility
+local EnemyRotationUtility = require(script.Parent.EnemyRotationUtility)
+
+-- Import DamageSystem for applying damage
+local DamageSystem = require(script.Parent.Parent.Systems.DamageSystem)
+
 local RangedChaseHandler = {}
 
--- Configuration specific to ranged enemies
-local RANGED_CONFIG = {
+-- Default configuration for ranged enemies (fallback values)
+local DEFAULT_RANGED_CONFIG = {
     BURST_SIZE = 3,
     SHOT_INTERVAL = 0.25,           -- 0.25 seconds between shots in burst
     AIM_TIME = 0.2,                 -- 0.2 seconds to aim and capture target
@@ -42,7 +48,33 @@ local RANGED_CONFIG = {
 }
 
 -- Store ranged enemy state data
-local rangedEnemyStates = {}  -- {[entityId] = {phase, burstCount, lastShotTime, targetedPlayerPosition, aimStartTime, activeProjectiles}}
+local rangedEnemyStates = {}  -- {[entityId] = {phase, burstCount, lastShotTime, targetedPlayerPosition, aimStartTime, activeProjectiles, firingAnimationTrack}}
+
+-- Helper function to get enemy-specific ranged configuration
+local function getEnemyRangedConfig(entityId)
+    local enemyType = EntityManager.getComponent(entityId, "EnemyType")
+    if not enemyType or not enemyType.config then
+        return DEFAULT_RANGED_CONFIG
+    end
+    
+    local config = enemyType.config
+    return {
+        BURST_SIZE = config.burstSize or DEFAULT_RANGED_CONFIG.BURST_SIZE,
+        SHOT_INTERVAL = config.shotInterval or DEFAULT_RANGED_CONFIG.SHOT_INTERVAL,
+        AIM_TIME = config.aimTime or DEFAULT_RANGED_CONFIG.AIM_TIME,
+        POST_BURST_PAUSE = config.postBurstPause or DEFAULT_RANGED_CONFIG.POST_BURST_PAUSE,
+        REPOSITION_THRESHOLD = config.repositionThreshold or DEFAULT_RANGED_CONFIG.REPOSITION_THRESHOLD,
+        OPTIMAL_DISTANCE = config.optimalDistance or DEFAULT_RANGED_CONFIG.OPTIMAL_DISTANCE,
+        
+        -- Projectile settings
+        PROJECTILE_SPEED = config.projectileSpeed or DEFAULT_RANGED_CONFIG.PROJECTILE_SPEED,
+        PROJECTILE_DAMAGE = config.damage or DEFAULT_RANGED_CONFIG.PROJECTILE_DAMAGE,
+        PROJECTILE_SIZE = config.projectileSize or DEFAULT_RANGED_CONFIG.PROJECTILE_SIZE,
+        PROJECTILE_COLOR = config.projectileColor or DEFAULT_RANGED_CONFIG.PROJECTILE_COLOR,
+        PROJECTILE_LIFETIME = config.projectileLifetime or DEFAULT_RANGED_CONFIG.PROJECTILE_LIFETIME,
+        PROJECTILE_TYPE = config.projectileType or "default",
+    }
+end
 
 -- Handle ranged enemy chase behavior
 function RangedChaseHandler.handleChase(entityId, enemyAI, model, closestPlayer, distance, currentTime, entityLastPlayerPositions, CONFIG)
@@ -121,13 +153,17 @@ function RangedChaseHandler._handlePositioning(entityId, enemyAI, model, closest
         shouldUpdateMoveTo = true
     else
         local playerMovedDistance = (currentPlayerPos - lastKnownPlayerPos).Magnitude
-        if playerMovedDistance > RANGED_CONFIG.REPOSITION_THRESHOLD then
+        local enemyConfig = getEnemyRangedConfig(entityId)
+        if playerMovedDistance > enemyConfig.REPOSITION_THRESHOLD then
             shouldUpdateMoveTo = true
         end
     end
     
     -- Move toward player (but only when they're out of range)
     if shouldUpdateMoveTo then
+        -- Rotate to face player while moving
+        EnemyRotationUtility.rotateForChase(entityId, closestPlayer)
+        
         RangedChaseHandler._moveToPlayer(entityId, closestPlayer, enemyAI)
         entityLastPlayerPositions[entityId] = currentPlayerPos
         enemyAI.lastMoveToTime = currentTime
@@ -139,47 +175,87 @@ end
 
 -- Phase 2: Aiming - Capture target position and prepare to shoot
 function RangedChaseHandler._handleAiming(entityId, enemyAI, model, closestPlayer, distance, currentTime, rangedState)
+    local enemyConfig = getEnemyRangedConfig(entityId)
     local aimDuration = currentTime - rangedState.aimStartTime
     
-    if aimDuration >= RANGED_CONFIG.AIM_TIME then
+    -- Play aiming animation when starting to aim (only once)
+    -- This triggers when ranged enemies transition from positioning to aiming phase
+    if aimDuration < 0.1 then  -- Just started aiming
+        local ModelCreationSystem = require(script.Parent.ModelCreationSystem)
+        ModelCreationSystem.playAnimationForEntity(entityId, "aim")
+        print("🎯 Ranged enemy", entityId, "started aiming animation")
+    end
+    
+    if aimDuration >= enemyConfig.AIM_TIME then
         -- Aiming complete - transition to shooting
         rangedState.phase = "shooting"
         rangedState.burstCount = 0
-        rangedState.lastShotTime = currentTime - RANGED_CONFIG.SHOT_INTERVAL  -- Allow immediate first shot
+        rangedState.lastShotTime = currentTime - enemyConfig.SHOT_INTERVAL  -- Allow immediate first shot
         print("🔫 Ranged enemy", entityId, "aiming complete - starting burst")
         return "chase"
     end
     
-    -- Continue aiming - face the target position
-    if model.humanoid and rangedState.targetedPlayerPosition then
-        local currentPos = model.part.Position
-        local targetPos = rangedState.targetedPlayerPosition
-        local direction = (targetPos - currentPos).Unit
-        model.humanoid:MoveTo(currentPos + direction * 0.1)  -- Face target without moving
+    -- Stop movement during aiming - just face the target
+    if model.humanoid then
+        -- Stop any current movement
+        model.humanoid:MoveTo(model.part.Position)
     end
     
-    print("🎯 Ranged enemy", entityId, "aiming... (" .. math.floor((RANGED_CONFIG.AIM_TIME - aimDuration) * 10) / 10 .. "s remaining)")
+    -- Rotate to face player during aiming
+    EnemyRotationUtility.rotateForAttackInstant(entityId, closestPlayer)
+    
+    print("🎯 Ranged enemy", entityId, "aiming... (" .. math.floor((enemyConfig.AIM_TIME - aimDuration) * 10) / 10 .. "s remaining)")
     return "chase"
 end
 
 -- Phase 3: Shooting - Fire projectile burst at captured position
 function RangedChaseHandler._handleShooting(entityId, enemyAI, model, closestPlayer, distance, currentTime, rangedState)
+    local enemyConfig = getEnemyRangedConfig(entityId)
+    
+    -- Stop movement during shooting
+    if model.humanoid then
+        model.humanoid:MoveTo(model.part.Position)
+    end
+    
+    -- Rotate to face player during shooting
+    EnemyRotationUtility.rotateForAttackInstant(entityId, closestPlayer)
+    
+    -- Get the animation track from the aiming phase and pause it at the last frame
+    if rangedState.burstCount == 0 and not rangedState.firingAnimationTrack then
+        local animationSet = EntityManager.getComponent(entityId, "AnimationSet")
+        if animationSet and animationSet.aim then
+            rangedState.firingAnimationTrack = animationSet.aim
+            
+            -- Pause the animation at the last frame immediately when shooting starts
+            rangedState.firingAnimationTrack:AdjustSpeed(0)
+            print("🎭 Ranged enemy", entityId, "paused aiming animation at last frame for firing")
+        end
+    end
+    
     -- Check if we should fire next shot
     local timeSinceLastShot = currentTime - rangedState.lastShotTime
     
-    if timeSinceLastShot >= RANGED_CONFIG.SHOT_INTERVAL and rangedState.burstCount < RANGED_CONFIG.BURST_SIZE then
+    if timeSinceLastShot >= enemyConfig.SHOT_INTERVAL and rangedState.burstCount < enemyConfig.BURST_SIZE then
         -- Fire projectile
         RangedChaseHandler._fireProjectile(entityId, model, rangedState.targetedPlayerPosition)
         rangedState.burstCount = rangedState.burstCount + 1
         rangedState.lastShotTime = currentTime
-        print("💥 Ranged enemy", entityId, "fired shot", rangedState.burstCount, "of", RANGED_CONFIG.BURST_SIZE)
+        print("💥 Ranged enemy", entityId, "fired shot", rangedState.burstCount, "of", enemyConfig.BURST_SIZE)
     end
     
     -- Check if burst is complete
-    if rangedState.burstCount >= RANGED_CONFIG.BURST_SIZE then
+    if rangedState.burstCount >= enemyConfig.BURST_SIZE then
+        -- Resume the animation after burst is complete
+        if rangedState.firingAnimationTrack then
+            -- Resume normal speed immediately
+            rangedState.firingAnimationTrack:AdjustSpeed(1)
+            print("🎭 Ranged enemy", entityId, "resumed animation after burst")
+        end
+        
         -- Burst complete - transition to repositioning
         rangedState.phase = "repositioning"
         rangedState.repositionStartTime = currentTime
+        rangedState.firingAnimationTrack = nil  -- Clear the track reference
         print("✅ Ranged enemy", entityId, "burst complete - repositioning")
     end
     
@@ -188,10 +264,16 @@ end
 
 -- Phase 4: Repositioning - Brief pause then decide next action
 function RangedChaseHandler._handleRepositioning(entityId, enemyAI, model, closestPlayer, distance, currentTime, rangedState, entityLastPlayerPositions, CONFIG)
+    local enemyConfig = getEnemyRangedConfig(entityId)
     local pauseDuration = currentTime - (rangedState.repositionStartTime or currentTime)
     local attackRange = enemyAI.attackRange or CONFIG.ATTACK_RANGE
     
-    if pauseDuration >= RANGED_CONFIG.POST_BURST_PAUSE then
+    -- Stop movement during repositioning pause
+    if model.humanoid then
+        model.humanoid:MoveTo(model.part.Position)
+    end
+    
+    if pauseDuration >= enemyConfig.POST_BURST_PAUSE then
         -- Simple logic: if player is in range, shoot again; if not, move closer
         if distance <= attackRange then
             -- Player still in range - start another burst cycle
@@ -234,75 +316,96 @@ function RangedChaseHandler._fireProjectile(entityId, model, targetPosition)
         return
     end
     
-    local startPosition = model.part.Position + Vector3.new(0, 2, 0)  -- Shoot from slightly above
+    local enemyConfig = getEnemyRangedConfig(entityId)
     
-    -- Create projectile
-    local projectile = Instance.new("Part")
-    projectile.Name = "RangedProjectile"
-    projectile.Size = RANGED_CONFIG.PROJECTILE_SIZE
-    projectile.Color = RANGED_CONFIG.PROJECTILE_COLOR
-    projectile.Material = Enum.Material.Neon
-    projectile.Shape = Enum.PartType.Ball
-    projectile.CanCollide = false
-    projectile.Anchored = false
-    projectile.Position = startPosition
+    -- Find the weapon in the enemy's right hand
+    local startPosition = model.part.Position + Vector3.new(0, 2, 0)  -- Default fallback
     
-    -- Add trail effect
-    local trail = Instance.new("Trail")
-    trail.Attachment0 = Instance.new("Attachment")
-    trail.Attachment1 = Instance.new("Attachment")
-    trail.Attachment0.Parent = projectile
-    trail.Attachment1.Parent = projectile
-    trail.Attachment1.Position = Vector3.new(0, 0, -0.5)  -- Behind the projectile
-    trail.Color = ColorSequence.new(RANGED_CONFIG.PROJECTILE_COLOR)
-    trail.Transparency = NumberSequence.new({
-        NumberSequenceKeypoint.new(0, 0.2),
-        NumberSequenceKeypoint.new(1, 1)
-    })
-    trail.Lifetime = 0.5
-    trail.MinLength = 0
-    trail.Parent = projectile
-    
-    projectile.Parent = workspace
-    
-    -- Calculate movement
-    local direction = (targetPosition - startPosition).Unit
-    local distance = (targetPosition - startPosition).Magnitude
-    local travelTime = distance / RANGED_CONFIG.PROJECTILE_SPEED
-    
-    -- Add BodyVelocity for movement
-    local bodyVelocity = Instance.new("BodyVelocity")
-    bodyVelocity.MaxForce = Vector3.new(4000, 4000, 4000)
-    bodyVelocity.Velocity = direction * RANGED_CONFIG.PROJECTILE_SPEED
-    bodyVelocity.Parent = projectile
-    
-    -- Handle collision detection
-    local connection
-    connection = projectile.Touched:Connect(function(hit)
-        local character = hit.Parent
-        local humanoid = character:FindFirstChild("Humanoid")
-        
-        if humanoid and Players:GetPlayerFromCharacter(character) then
-            -- Hit a player
-            print("💥 Projectile hit player:", character.Name)
-            
-            -- Deal damage through combat system (create temporary combat event)
-            -- This could be enhanced to integrate with your damage system
-            
-            -- Clean up
-            connection:Disconnect()
-            projectile:Destroy()
+    if model.model then
+        -- First, try to find the Gun model directly in the enemy model
+        local gun = model.model:FindFirstChild("Gun")
+        if gun then
+            -- Gun is a Model, so we need to find the "Tip" part first, then fallback to other parts
+            local tip = gun:FindFirstChild("Tip")
+            if tip then
+                startPosition = tip.Position
+                print("🎯 Found Gun Tip at position:", tip.Position)
+            else
+                -- Look for other specific parts in the Gun model (like "Barrel" or "Muzzle")
+                local barrel = gun:FindFirstChild("Barrel") or gun:FindFirstChild("Muzzle")
+                if barrel then
+                    startPosition = barrel.Position
+                    print("🎯 Found Gun barrel at position:", barrel.Position)
+                else
+                    -- Fallback: use the PrimaryPart or first part in the Gun model
+                    if gun.PrimaryPart then
+                        startPosition = gun.PrimaryPart.Position
+                        print("🎯 Found Gun model PrimaryPart at position:", gun.PrimaryPart.Position)
+                    else
+                        local firstPart = gun:FindFirstChildWhichIsA("BasePart")
+                        if firstPart then
+                            startPosition = firstPart.Position
+                            print("🎯 Found Gun part at position:", firstPart.Position)
+                        else
+                            print("⚠️ Gun model found but no parts inside it")
+                        end
+                    end
+                end
+            end
+        else
+            -- Try to find the weapon in the right hand/arm
+            local rightArm = model.model:FindFirstChild("Right Arm") or model.model:FindFirstChild("RightHand")
+            if rightArm then
+                -- Look for a weapon in the right arm
+                local weapon = rightArm:FindFirstChild("Bow") or rightArm:FindFirstChild("Gun") or rightArm:FindFirstChild("Weapon")
+                if weapon then
+                    -- Use the weapon's position
+                    startPosition = weapon.Position
+                    print("🎯 Found weapon in right arm at position:", weapon.Position)
+                else
+                    -- Use the right arm's position
+                    startPosition = rightArm.Position
+                    print("🎯 Using right arm position:", rightArm.Position)
+                end
+            else
+                -- Fallback: try to find any weapon in the model
+                local weapon = model.model:FindFirstChild("Bow") or model.model:FindFirstChild("Gun") or model.model:FindFirstChild("Weapon")
+                if weapon then
+                    startPosition = weapon.Position
+                    print("🎯 Found weapon in model at position:", weapon.Position)
+                else
+                    print("⚠️ No weapon found, using default position:", startPosition)
+                end
+            end
         end
-    end)
+    end
     
-    -- Auto cleanup after lifetime
-    Debris:AddItem(projectile, RANGED_CONFIG.PROJECTILE_LIFETIME)
+    -- Create projectile using ProjectileManager (server logic only)
+    local ProjectileManager = require(script.Parent.Parent.ProjectileManager)
+    local projectileConfig = {
+        size = enemyConfig.PROJECTILE_SIZE,
+        color = enemyConfig.PROJECTILE_COLOR,
+        speed = enemyConfig.PROJECTILE_SPEED,
+        damage = enemyConfig.PROJECTILE_DAMAGE,
+        lifetime = enemyConfig.PROJECTILE_LIFETIME,
+        projectileType = enemyConfig.PROJECTILE_TYPE
+    }
     
-    print("🚀 Fired projectile from", startPosition, "to", targetPosition, "travel time:", math.floor(travelTime * 100) / 100, "s")
+    print("🎯 DEBUG: Creating projectile with config:", projectileConfig)
+    print("🎯 DEBUG: ProjectileType:", enemyConfig.PROJECTILE_TYPE)
+    
+    ProjectileManager.createProjectile(startPosition, targetPosition, projectileConfig)
+    
+    print("🚀 Server fired projectile from", startPosition, "to", targetPosition)
 end
 
 -- Clean up ranged enemy state when entity is destroyed
 function RangedChaseHandler.cleanupEntity(entityId)
+    local rangedState = rangedEnemyStates[entityId]
+    if rangedState and rangedState.firingAnimationTrack then
+        -- Resume normal speed before cleanup
+        rangedState.firingAnimationTrack:AdjustSpeed(1)
+    end
     rangedEnemyStates[entityId] = nil
 end
 

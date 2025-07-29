@@ -20,6 +20,8 @@ end
 
 local EntityManager = require(ReplicatedStorage.Shared.EntityManager)
 
+-- Rotation utility removed for special enemies (only ranged enemies rotate)
+
 local SpecialChaseHandler = {}
 
 -- Configuration specific to special enemies

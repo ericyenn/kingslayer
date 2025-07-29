@@ -8,6 +8,30 @@ Pure ECS with no external system dependencies.
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local CollectionService = game:GetService("CollectionService")
+
+-- Event for player death/respawn
+local PlayerStateEvent = Instance.new("BindableEvent")
+PlayerStateEvent.Name = "PlayerStateEvent"
+PlayerStateEvent.Parent = ReplicatedStorage
+
+-- Listen for Dead tag changes on all players
+local function onPlayerAdded(player)
+    CollectionService:GetInstanceAddedSignal("Dead"):Connect(function(inst)
+        if inst == player then
+            PlayerStateEvent:Fire("Dead", player)
+        end
+    end)
+    CollectionService:GetInstanceRemovedSignal("Dead"):Connect(function(inst)
+        if inst == player then
+            PlayerStateEvent:Fire("Alive", player)
+        end
+    end)
+end
+for _, player in ipairs(Players:GetPlayers()) do
+    onPlayerAdded(player)
+end
+Players.PlayerAdded:Connect(onPlayerAdded)
 
 -- Import custom ECS modules
 local EntityManager = require(ReplicatedStorage.Shared.EntityManager)
@@ -88,8 +112,8 @@ function AISystem.update(deltaTime)
 	
 	local entitiesProcessed = 0
 	
-	-- Get all entities with EnemyAI, Model, and Health components (removed Position dependency)
-	local aiEntities = EntityManager.getEntitiesWithAll({"EnemyAI", "Model", "Health"})
+	-- Get all entities with EnemyAI and Model components (enemies use Humanoid.Health directly)
+	local aiEntities = EntityManager.getEntitiesWithAll({"EnemyAI", "Model"})
 
 	for _, entityId in ipairs(aiEntities) do
 		if entitiesProcessed >= CONFIG.MAX_ENTITIES_PER_FRAME then
@@ -98,9 +122,8 @@ function AISystem.update(deltaTime)
 		
 		local enemyAI = EntityManager.getComponent(entityId, "EnemyAI")
 		local model = EntityManager.getComponent(entityId, "Model")
-		local health = EntityManager.getComponent(entityId, "Health")
 		
-		if not enemyAI or not model or not health or not model.part then
+		if not enemyAI or not model or not model.part then
 			-- Skip this entity
 		else
 			-- Get position directly from the model
@@ -109,8 +132,8 @@ function AISystem.update(deltaTime)
 			-- Skip if too far from players
 			if not AISystem._isNearPlayer(currentPosition) then
 				-- Skip this entity
-			elseif health.current <= 0 then
-				-- Skip if dead
+			elseif model.humanoid and model.humanoid.Health <= 0 then
+				-- Skip if dead (check Humanoid.Health directly)
 				AISystem._setState(entityId, enemyAI, AI_STATES.DEAD)
 			else
 				-- Check if we should update this entity based on its state
@@ -132,6 +155,13 @@ function AISystem._updateEntityAI(entityId, enemyAI, model, currentTime)
 	local currentState = enemyAI.state or AI_STATES.IDLE
 	local currentPosition = model.part.Position
 	local closestPlayer, distance = AISystem._findClosestPlayer(currentPosition)
+	-- Early exit if closestPlayer is dead or invalid
+	if closestPlayer and CollectionService:HasTag(closestPlayer.player, "Dead") then
+		enemyAI.target = nil
+		AISystem._setState(entityId, enemyAI, AI_STATES.IDLE)
+		EntityManager.addComponent(entityId, "EnemyAI", enemyAI)
+		return
+	end
 	
 	-- State machine
 	if currentState == AI_STATES.IDLE then
@@ -153,24 +183,52 @@ function AISystem._updateEntityAI(entityId, enemyAI, model, currentTime)
 	EntityManager.addComponent(entityId, "EnemyAI", enemyAI)
 end
 
+-- Listen for player death/respawn events to clear targets
+PlayerStateEvent.Event:Connect(function(state, player)
+    print("[PlayerStateEvent] Fired for state:", state, "player:", player and player.Name or tostring(player))
+    for _, entityId in ipairs(EntityManager.getEntitiesWith("EnemyAI")) do
+        local enemyAI = EntityManager.getComponent(entityId, "EnemyAI")
+        print("[PlayerStateEvent] Entity", entityId, "current target:", enemyAI and enemyAI.target and enemyAI.target.Name or tostring(enemyAI and enemyAI.target))
+        if enemyAI and enemyAI.target == player then
+            print("[PlayerStateEvent] Affecting entity", entityId, "(target matched)")
+            if state == "Dead" then
+                enemyAI.target = nil
+                AISystem._setState(entityId, enemyAI, AI_STATES.PATROL)
+                -- Immediately assign a random patrol target (same as idle->patrol)
+                local model = EntityManager.getComponent(entityId, "Model")
+                if model and model.part then
+                    AISystem._setRandomPatrolTarget(entityId, model.part.Position)
+                end
+            elseif state == "Alive" then
+                -- Optionally, force reacquire target
+                -- enemyAI.target = nil
+            end
+            EntityManager.addComponent(entityId, "EnemyAI", enemyAI)
+        end
+    end
+end)
+
 -- Handle idle state
 function AISystem._handleIdleState(entityId, enemyAI, model, closestPlayer, distance, currentTime)
 	-- Use per-enemy detection range, fallback to config
 	local detectionRange = enemyAI.detectionRange or CONFIG.DETECTION_RANGE
-	
 	-- Check for player
 	if closestPlayer and distance <= detectionRange then
 		AISystem._setState(entityId, enemyAI, AI_STATES.CHASE)
+		enemyAI.target = closestPlayer.player
+		print("[AI] Entity", entityId, "set target to", closestPlayer.player.Name)
+		EntityManager.addComponent(entityId, "EnemyAI", enemyAI)
 		return
 	end
-	
 	-- Transition to patrol after random time
 	local stateTime = currentTime - (enemyAI.stateStartTime or currentTime)
 	local idleTime = math.random(CONFIG.IDLE_MIN_TIME, CONFIG.IDLE_MAX_TIME)
-	
 	if stateTime >= idleTime then
 		AISystem._setState(entityId, enemyAI, AI_STATES.PATROL)
 		AISystem._setRandomPatrolTarget(entityId, model.part.Position)
+		enemyAI.target = nil
+		print("[AI] Entity", entityId, "cleared target (idle->patrol)")
+		EntityManager.addComponent(entityId, "EnemyAI", enemyAI)
 	end
 end
 
@@ -178,17 +236,21 @@ end
 function AISystem._handlePatrolState(entityId, enemyAI, model, closestPlayer, distance, currentTime)
 	-- Use per-enemy detection range, fallback to config
 	local detectionRange = enemyAI.detectionRange or CONFIG.DETECTION_RANGE
-	
 	-- Check for player
 	if closestPlayer and distance <= detectionRange then
 		AISystem._setState(entityId, enemyAI, AI_STATES.CHASE)
+		enemyAI.target = closestPlayer.player
+		print("[AI] Entity", entityId, "set target to", closestPlayer.player.Name)
+		EntityManager.addComponent(entityId, "EnemyAI", enemyAI)
 		return
 	end
-	
 	-- Return to idle after patrol time
 	local stateTime = currentTime - (enemyAI.stateStartTime or currentTime)
 	if stateTime >= CONFIG.PATROL_TIME then
 		AISystem._setState(entityId, enemyAI, AI_STATES.IDLE)
+		enemyAI.target = nil
+		print("[AI] Entity", entityId, "cleared target (patrol->idle)")
+		EntityManager.addComponent(entityId, "EnemyAI", enemyAI)
 	end
 end
 
@@ -392,28 +454,38 @@ end
 
 -- Find closest player to position
 function AISystem._findClosestPlayer(position)
-	local closestPlayer = nil
-	local closestDistance = math.huge
-	
-	for _, playerData in ipairs(playerPositions) do
-		local distance = (position - playerData.position).Magnitude
-		if distance < closestDistance then
-			closestDistance = distance
-			closestPlayer = playerData
-		end
-	end
-	
-	return closestPlayer, closestDistance
+    local closestPlayer = nil
+    local closestDistance = math.huge
+
+    for _, playerData in ipairs(playerPositions) do
+        local player = playerData.player
+        if player and player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
+            if not CollectionService:HasTag(player, "Dead") then
+                local distance = (position - playerData.position).Magnitude
+                if distance < closestDistance then
+                    closestDistance = distance
+                    closestPlayer = playerData
+                end
+            end
+        end
+    end
+
+    return closestPlayer, closestDistance
 end
 
 -- Check if position is near any player
 function AISystem._isNearPlayer(position)
-	for _, playerData in ipairs(playerPositions) do
-		if (position - playerData.position).Magnitude <= CONFIG.MAX_AI_DISTANCE then
-			return true
-		end
-	end
-	return false
+    for _, playerData in ipairs(playerPositions) do
+        local player = playerData.player
+        if player and player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
+            if not CollectionService:HasTag(player, "Dead") then
+                if (position - playerData.position).Magnitude <= CONFIG.MAX_AI_DISTANCE then
+                    return true
+                end
+            end
+        end
+    end
+    return false
 end
 
 -- Clean up tracking data when entity is destroyed

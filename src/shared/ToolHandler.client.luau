@@ -61,8 +61,8 @@ local SWING_ANIMATION_ID = "rbxassetid://110625725642736" -- Custom swing animat
 
 -- Shape cast configuration - easy to adjust
 local SHAPE_CAST_CONFIG = {
-    radius = Vector3.new(2, 2, 2), -- Size of the detection area (reduced for more precise combat)
-    distance = 4, -- Distance in front of player
+    radius = Vector3.new(2, 5, 2), -- Size of the detection area (player-sized: 2 wide, 5 tall, 2 deep)
+    distance = 1, -- Distance in front of player (closer for more precise combat)
     ignoreFloor = true, -- Whether to ignore floor/ground
     visualDuration = 0.1, -- How long visual feedback lasts
 }
@@ -106,7 +106,11 @@ end
 
 local function performShapeCast(character, centerPosition, radius)
     -- Use GetPartBoundsInBox for shape casting detection
-    local partBounds = workspace:GetPartBoundsInBox(CFrame.new(centerPosition), radius)
+    -- Create CFrame oriented to face the same direction as the player
+    local cameraDirection = camera.CFrame.LookVector
+    local playerForward = Vector3.new(cameraDirection.X, 0, cameraDirection.Z).Unit -- Keep horizontal only
+    local orientedCFrame = CFrame.new(centerPosition, centerPosition + playerForward)
+    local partBounds = workspace:GetPartBoundsInBox(orientedCFrame, radius)
     local detectedParts = {}
     
     -- Filter out unwanted parts
@@ -487,12 +491,22 @@ onUse = function(attackType)
         -- Play swing animation for tools
         playSwingAnimation()
         
-        -- Perform shape cast in front of camera
-        local cameraPosition = camera.CFrame.Position
-        local cameraDirection = camera.CFrame.LookVector
+        -- Perform shape cast in front of player
+        local character = player.Character
+        local rootPart = character and character:FindFirstChild("HumanoidRootPart")
+        local head = character and character:FindFirstChild("Head")
         
-        -- Calculate shape cast center position (3 studs in front of camera)
-        local shapeCastCenter = cameraPosition + cameraDirection * SHAPE_CAST_CONFIG.distance
+        if not rootPart then
+            print("ToolHandler: No HumanoidRootPart found, skipping shapecast")
+            return
+        end
+        
+        -- Get player's forward direction (use camera direction for aiming)
+        local cameraDirection = camera.CFrame.LookVector
+        local playerForward = Vector3.new(cameraDirection.X, 0, cameraDirection.Z).Unit -- Keep horizontal only
+        
+        -- Calculate shape cast center position (1 stud in front of player)
+        local shapeCastCenter = rootPart.Position + playerForward * SHAPE_CAST_CONFIG.distance
         
         -- Perform the shape cast
         local detectedParts = performShapeCast(character, shapeCastCenter, SHAPE_CAST_CONFIG.radius)

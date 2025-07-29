@@ -49,11 +49,11 @@ function ItemSetupSystem:SetupItem(item)
     -- Find the item definition by name
     local itemDefinition = self:FindItemDefinitionByName(item.Name)
     if not itemDefinition then
-        warn("No item definition found for:", item.Name)
+        warn("No item definition found for:", item.Name, "- item may not have proper components")
         return
     end
     
-    -- Add components to the item on the client
+    -- Add components to the item on the client (if not already added server-side)
     self:AddComponentsToItem(item, itemDefinition.components)
     
     print("Setup item on client:", item.Name)
@@ -91,6 +91,8 @@ function ItemSetupSystem:CreateComponent(componentName, config)
         return nil
     end
 end
+
+
 
 function ItemSetupSystem:CleanupItem(item)
     -- Remove from processed items

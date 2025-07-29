@@ -16,6 +16,8 @@ ActionConstants.Armor = {
 ActionConstants.Functional = {
     HEALING_ESSENCE = "healing_essence_action",
     SUMMONER = "summoner_action",
+    REVIVE_PLUSH = "revive_plush_action",
+    PHILOSOPHERS_STONE = "philosophers_stone_action",
     DEFAULT = "default_action"
 }
 

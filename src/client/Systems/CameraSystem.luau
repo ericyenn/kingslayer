@@ -6,6 +6,7 @@ local UserInputService = game:GetService("UserInputService")
 local RunService = game:GetService("RunService")
 local UserGameSettings = UserSettings():GetService("UserGameSettings")
 local TweenService = game:GetService("TweenService")
+local CollectionService = game:GetService("CollectionService")
 local DEFAULT_FOV = 70
 local ZOOMED_FOV = 58 -- Less zoom in
 local ZOOM_IN_TIME = 0.5 -- Slower, smoother zoom in
@@ -245,27 +246,12 @@ end
 function CameraSystem:Initialize()
     -- Set up global reference for other systems
     _G.CameraSystem = self
-    
-    local function setSpectatorCamera()
-        -- Try to find the ragdoll model in workspace
-        local ragdoll = workspace:FindFirstChild(player.Name)
-        if ragdoll then
-            local subject = ragdoll:FindFirstChild("Head") or ragdoll:FindFirstChild("Torso") or ragdoll:FindFirstChild("HumanoidRootPart")
-            if subject then
-                camera.CameraType = Enum.CameraType.Scriptable
-                camera.CameraSubject = subject
-                distance = 8 -- Third-person distance
-                initializeCameraRotation()
-                return true
-            end
-        end
-        return false
-    end
 
     -- Wait for character and set camera subject
     local character = player.Character or player.CharacterAdded:Wait()
-    if player:GetAttribute("NoRespawn") then
-        setSpectatorCamera()
+    if CollectionService:HasTag(player, "Dead") then
+        -- Player is dead, enter spectate mode
+        self:EnterSpectateMode()
     else
         local head = character:WaitForChild("Head")
         camera.CameraType = Enum.CameraType.Scriptable
@@ -303,12 +289,23 @@ function CameraSystem:Initialize()
     
     -- Handle character respawning
     player.CharacterAdded:Connect(function(newCharacter)
-        if player:GetAttribute("NoRespawn") then
-            setSpectatorCamera()
+        -- Wait a brief moment to ensure all attributes are properly set
+        task.wait(0.1)
+        
+        if CollectionService:HasTag(player, "Dead") then
+            self:EnterSpectateMode()
         else
             local newHead = newCharacter:WaitForChild("Head")
             camera.CameraSubject = newHead
             initializeCameraRotation()
+            -- Force first-person mode on respawn with a slight delay to ensure everything is set up
+            task.defer(function()
+                -- Double-check that we're not in spectator mode
+                if not CollectionService:HasTag(player, "Dead") then
+                    self:SetDistance(0.5)
+                    print("[CameraSystem] SetDistance(0.5) called after character respawn")
+                end
+            end)
         end
     end)
     
@@ -369,6 +366,7 @@ end
 
 -- Set camera distance (0.5 = first-person, higher = third-person)
 function CameraSystem:SetDistance(newDistance)
+    print("[CameraSystem] SetDistance:", newDistance, "->", math.max(0.5, newDistance))
     distance = math.max(0.5, newDistance)
     
     -- Update crosshair visibility based on distance
@@ -378,8 +376,6 @@ function CameraSystem:SetDistance(newDistance)
     
     -- Update mouse cursor visibility
     UserInputService.MouseIconEnabled = (distance > 0.5)
-    
-    print("Camera distance set to:", distance)
 end
 
 -- Get current camera distance
@@ -393,6 +389,66 @@ function CameraSystem:ToggleDistance()
         self:SetDistance(5) -- Switch to third-person
     else
         self:SetDistance(0.5) -- Switch to first-person
+    end
+end
+
+-- Enter spectate mode (called by SpectateUI when player dies)
+function CameraSystem:EnterSpectateMode()
+    print("[CameraSystem] EnterSpectateMode called")
+    
+    -- Set camera to third-person spectate mode
+    self:SetDistance(8)
+    
+    -- Try to find the ragdoll model in workspace
+    local ragdoll = workspace:FindFirstChild(player.Name)
+    if ragdoll then
+        local subject = ragdoll:FindFirstChild("Head") or ragdoll:FindFirstChild("Torso") or ragdoll:FindFirstChild("HumanoidRootPart")
+        if subject then
+            camera.CameraType = Enum.CameraType.Scriptable
+            camera.CameraSubject = subject
+            initializeCameraRotation()
+            print("[CameraSystem] Set camera to ragdoll spectate mode")
+        end
+    else
+        print("[CameraSystem] No ragdoll found for spectate mode")
+    end
+end
+
+-- Set spectate target (called by SpectateUI when switching players)
+function CameraSystem:SetSpectateTarget(targetPart)
+    if targetPart then
+        print("[CameraSystem] SetSpectateTarget:", targetPart.Name)
+        camera.CameraType = Enum.CameraType.Scriptable
+        camera.CameraSubject = targetPart
+        initializeCameraRotation()
+    else
+        print("[CameraSystem] SetSpectateTarget: nil (no players alive)")
+        camera.CameraSubject = nil
+    end
+end
+
+-- Exit spectate mode (called by SpectateUI when player is revived)
+function CameraSystem:ExitSpectateMode()
+    print("[CameraSystem] ExitSpectateMode called")
+    
+    local character = player.Character
+    if not character then
+        print("[CameraSystem] No character found, waiting for character")
+        character = player.CharacterAdded:Wait()
+    end
+    
+    local head = character:FindFirstChild("Head")
+    if head then
+        print("[CameraSystem] Found head, restoring to first-person mode")
+        camera.CameraType = Enum.CameraType.Scriptable
+        camera.CameraSubject = head
+        initializeCameraRotation()
+        
+        -- Force first-person mode
+        self:SetDistance(0.5)
+        print("[CameraSystem] ExitSpectateMode: Restored to first-person mode")
+    else
+        print("[CameraSystem] No head found in character")
     end
 end
 

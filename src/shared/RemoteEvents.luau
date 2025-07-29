@@ -64,9 +64,16 @@ if RunService:IsServer() then
     -- Server: Create boss health update RemoteEvent
     local bossHealthUpdateRemote = createRemoteEvent("BossHealthUpdate")
 
+    -- Server: Create prayer system RemoteEvent
+    local prayerRequestRemote = createRemoteEvent("PrayerRequest")
+
     -- Server: Create time system RemoteEvents
     local clockUpdateRemote = createRemoteEvent("ClockUpdate")
     local statsUpdateRemote = createRemoteEvent("StatsUpdate")
+    
+    -- Server: Create revive system RemoteEvents
+    local reviveRequestRemote = createRemoteEvent("ReviveRequest")
+    local reviveResponseRemote = createRemoteEvent("ReviveResponse")
     
     print("Server created DragRequest RemoteFunction") -- Debug
     print("Server created InventoryRequest RemoteFunction") -- Debug
@@ -109,6 +116,10 @@ if RunService:IsServer() then
     -- Time system remotes
     RemoteEvents.ClockUpdate = clockUpdateRemote
     RemoteEvents.StatsUpdate = statsUpdateRemote
+    
+    -- Revive system remotes
+    RemoteEvents.ReviveRequest = reviveRequestRemote
+    RemoteEvents.ReviveResponse = reviveResponseRemote
 else
     -- Client: Wait for the RemoteFunctions to be created by server (existing)
     local dragRequestRemote = ReplicatedStorage:WaitForChild("DragRequest")
@@ -142,10 +153,17 @@ else
     
     -- Client: Wait for boss health update RemoteEvent
     local bossHealthUpdateRemote = ReplicatedStorage:WaitForChild("BossHealthUpdate")
+    
+    -- Client: Wait for prayer system RemoteEvent
+    local prayerRequestRemote = ReplicatedStorage:WaitForChild("PrayerRequest")
 
     -- Client: Wait for time system RemoteEvents
     local clockUpdateRemote = ReplicatedStorage:WaitForChild("ClockUpdate")
     local statsUpdateRemote = ReplicatedStorage:WaitForChild("StatsUpdate")
+    
+    -- Client: Wait for revive system RemoteEvents
+    local reviveRequestRemote = ReplicatedStorage:WaitForChild("ReviveRequest")
+    local reviveResponseRemote = ReplicatedStorage:WaitForChild("ReviveResponse")
     
     print("Client found DragRequest RemoteFunction") -- Debug
     print("Client found InventoryRequest RemoteFunction") -- Debug
@@ -184,10 +202,17 @@ else
     
     -- Boss health update remote
     RemoteEvents.BossHealthUpdate = bossHealthUpdateRemote
+    
+    -- Prayer system remote
+    RemoteEvents.PrayerRequest = prayerRequestRemote
 
     -- Time system remotes
     RemoteEvents.ClockUpdate = clockUpdateRemote
     RemoteEvents.StatsUpdate = statsUpdateRemote
+    
+    -- Revive system remotes
+    RemoteEvents.ReviveRequest = reviveRequestRemote
+    RemoteEvents.ReviveResponse = reviveResponseRemote
 end
 
 return RemoteEvents 

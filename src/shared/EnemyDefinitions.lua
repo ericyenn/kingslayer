@@ -50,7 +50,7 @@ EnemyDefinitions.enemies = {
         -- Custom configuration overrides
         customConfig = {
             moveSpeed = 18, -- Faster than default melee
-            damage = 30,    -- Higher damage
+            damage = 20,    -- Higher damage
             attackSpeed = 2.2,
             detectionRange = 15,
             -- Idle movement settings
@@ -101,10 +101,10 @@ EnemyDefinitions.enemies = {
     },
     
     -- RANGED ENEMIES
-    forest_archer = {
-        name = "Forest Archer",
-        description = "Forest dude archer that keeps its distance and shoots arrows.",
-        model = "ForestBerserkerModel",
+    desert_archer = {
+        name = "Desert Archer",
+        description = "Desert dude archer that keeps its distance and shoots arrows.",
+        model = "DesertArcherModel",
         enemyType = "ranged",
         
         color = Color3.fromRGB(200, 200, 180), -- Bone white
@@ -113,12 +113,22 @@ EnemyDefinitions.enemies = {
         
         customConfig = {
             moveSpeed = 10, -- Slower movement
-            damage = 25,
+            damage = 7,
             attackSpeed = 1.2,
             attackRange = 40,
             detectionRange = 45,
             projectileSpeed = 60,
             aimAccuracy = 0.85,
+            -- Ranged-specific settings
+            burstSize = 1,
+            shotInterval = 0.25,
+            aimTime = 0.2,
+            postBurstPause = 0.5,
+            repositionThreshold = 8,
+            optimalDistance = 25,
+            projectileSize = Vector3.new(0.2, 0.2, 0.2),
+            projectileColor = Color3.fromRGB(255, 100, 50), -- Orange-red
+            projectileLifetime = 3,
             -- Idle movement settings for ranged enemies
             idleMovementEnabled = true,
             idleMovementRadius = 12,
@@ -154,7 +164,17 @@ EnemyDefinitions.enemies = {
             detectionRange = 35,
             projectileSpeed = 40,
             projectileType = "magic_bolt",
-            aimAccuracy = 0.9
+            aimAccuracy = 0.9,
+            -- Ranged-specific settings
+            burstSize = 1, -- Single powerful shot
+            shotInterval = 1,
+            aimTime = 0.3,
+            postBurstPause = 2.0, -- Increased to 2.0 seconds for slower attacks
+            repositionThreshold = 12,
+            optimalDistance = 30,
+            projectileSize = Vector3.new(0.3, 0.3, 0.3),
+            projectileColor = Color3.fromRGB(100, 60, 120), -- Purple
+            projectileLifetime = 4,
         },
         
         loot = {
@@ -342,10 +362,7 @@ function EnemyDefinitions:CreateEnemyComponents(enemyId)
             critMultiplier = 1.5,
             dodgeChance = 0.05
         }),
-        Health = Components.create("Health", {
-            max = enemyDef.health or 100,
-            current = enemyDef.health or 100
-        })
+        -- Health component removed - enemies now use Humanoid.Health directly
         -- Note: enemyType is stored in the EnemyType component, not as a separate field
     }
 end

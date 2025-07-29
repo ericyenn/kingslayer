@@ -22,6 +22,8 @@ end
 
 local EntityManager = require(ReplicatedStorage.Shared.EntityManager)
 
+-- Rotation utility removed for melee enemies (only ranged enemies rotate)
+
 local MeleeChaseHandler = {}
 
 -- Attack tracking
@@ -39,6 +41,14 @@ local MELEE_CONFIG = {
 
 -- Handle melee enemy chase behavior
 function MeleeChaseHandler.handleChase(entityId, enemyAI, model, closestPlayer, distance, currentTime, entityLastPlayerPositions, CONFIG)
+    -- Check if closestPlayer is dead, if so, stop targeting
+    if closestPlayer and closestPlayer.player then
+        local CollectionService = game:GetService("CollectionService")
+        print("[MeleeChaseHandler] (handleChase) Checking Dead tag for player:", closestPlayer.player.Name, CollectionService:HasTag(closestPlayer.player, "Dead"))
+        if CollectionService:HasTag(closestPlayer.player, "Dead") then
+            return "idle" -- Stop targeting dead players
+        end
+    end
     -- Get enemy-specific ranges
     local attackRange = enemyAI.attackRange or CONFIG.ATTACK_RANGE
     local detectionRange = enemyAI.detectionRange or CONFIG.DETECTION_RANGE
@@ -238,7 +248,13 @@ function MeleeChaseHandler._dealShapecastDamage(entityId, player, damage)
     if not player.Character or not player.Character:FindFirstChild("Humanoid") then
         return
     end
-    
+    -- Prevent damage to dead players
+    local CollectionService = game:GetService("CollectionService")
+    print("[MeleeChaseHandler] Checking Dead tag for player:", player.Name, CollectionService:HasTag(player, "Dead"))
+    if CollectionService:HasTag(player, "Dead") then
+        print("[MeleeChaseHandler] Player is dead, not applying shapecast damage.")
+        return
+    end
     -- Simple damage application (you can integrate with your existing damage system)
     local humanoid = player.Character.Humanoid
     humanoid:TakeDamage(damage)
@@ -322,14 +338,17 @@ function MeleeChaseHandler._updateSingleAttack(entityId, combat, currentTime)
     local enemyLookVector = model.part.CFrame.LookVector
     
     -- Shapecast configuration
-    local shapecastDistance = 3  -- 3 studs in front
-    local shapecastSize = Vector3.new(2, 2, 2)  -- 2x2x2 detection box
+    local shapecastDistance = 1.0  -- 1 stud in front (closer for more precise combat)
+    local shapecastSize = Vector3.new(1.5, 1.5, 1.5)  -- 1.5x1.5x1.5 detection box
     
     -- Calculate current shapecast center position (moves with enemy)
     local shapecastCenter = enemyPosition + enemyLookVector * shapecastDistance
     
     -- Perform the shapecast using GetPartBoundsInBox
-    local detectedParts = workspace:GetPartBoundsInBox(CFrame.new(shapecastCenter), shapecastSize)
+    -- Create CFrame oriented to face the same direction as the enemy
+    local enemyCFrame = model.part.CFrame
+    local orientedCFrame = CFrame.new(shapecastCenter, shapecastCenter + enemyCFrame.LookVector)
+    local detectedParts = workspace:GetPartBoundsInBox(orientedCFrame, shapecastSize)
     
     -- Check if we hit the target player
     local targetPlayer = combat.attackTargetPlayer
@@ -363,8 +382,8 @@ function MeleeChaseHandler._endAttack(entityId, combat, hit, centerPosition, siz
         if model and model.part then
             local enemyPosition = model.part.Position
             local enemyLookVector = model.part.CFrame.LookVector
-            local missCenter = enemyPosition + enemyLookVector * 3
-            MeleeChaseHandler._createAttackVisual(missCenter, Vector3.new(2, 2, 2), false)
+            local missCenter = enemyPosition + enemyLookVector * 1.0  -- Match the shapecast distance
+            MeleeChaseHandler._createAttackVisual(missCenter, Vector3.new(1.5, 1.5, 1.5), false)
         end
         print("⚔️ Melee enemy", entityId, "MISSED with moving shapecast")
     end

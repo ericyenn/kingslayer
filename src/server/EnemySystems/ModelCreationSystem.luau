@@ -22,6 +22,7 @@ if not Components then
 end
 
 local PrefabLibrary = require(ReplicatedStorage.Shared.PrefabLibrary)
+local PhysicsService = game:GetService("PhysicsService")
 
 local ModelCreationSystem = {}
 ModelCreationSystem.name = "ModelCreationSystem"
@@ -69,8 +70,8 @@ function ModelCreationSystem.update(deltaTime)
 	
 	local modelsProcessed = 0
 	
-	-- Find entities that need models created (removed Position dependency)
-	local enemyEntities = EntityManager.getEntitiesWithAll({"EnemyType", "Health"})
+	-- Find entities that need models created (enemies use Humanoid.Health directly)
+	local enemyEntities = EntityManager.getEntitiesWithAll({"EnemyType"})
 	
 	for _, entityId in ipairs(enemyEntities) do
 		if modelsProcessed >= CONFIG.MAX_MODELS_PER_FRAME then
@@ -131,12 +132,12 @@ function ModelCreationSystem._createModelForEntity(entityId)
 		if model.PrimaryPart then
 			model.PrimaryPart.Position = groundPosition
 			model.PrimaryPart.Anchored = false
-			model.PrimaryPart.CanCollide = false -- HRP shouldn't collide
+			model.PrimaryPart.CanCollide = true -- HRP can now collide
 		elseif model:FindFirstChildWhichIsA("BasePart") then
 			local mainPart = model:FindFirstChildWhichIsA("BasePart")
 			mainPart.Position = groundPosition
 			mainPart.Anchored = false
-			mainPart.CanCollide = false
+			mainPart.CanCollide = true
 		end
 		
 		-- Parent to workspace for visibility
@@ -164,6 +165,13 @@ function ModelCreationSystem._createModelForEntity(entityId)
         humanoid.Died:Connect(function()
             onDeathOfTheEnemy(model)
         end)
+    end
+
+    -- Assign all parts to 'Enemies' collision group
+    for _, part in ipairs(model:GetDescendants()) do
+        if part:IsA("BasePart") then
+            part.CollisionGroup = "Enemies"
+        end
     end
 
     print("🎨 Created model '" .. modelName .. "' for", enemyType.enemyId, "entity", entityId, "at", groundPosition)
@@ -255,12 +263,26 @@ function ModelCreationSystem._applyEnemyStatsToHumanoid(entityId, model)
 		warn("⚠️ No EnemyAI speed found for entity " .. entityId .. ", using default speed 16")
 	end
 	
-	-- Apply health from Health component
-	local health = EntityManager.getComponent(entityId, "Health")
-	if health then
-		humanoid.MaxHealth = health.max
-		humanoid.Health = health.current
-		print("❤️ Set entity", entityId, "health to", health.current .. "/" .. health.max)
+	-- Apply health from EnemyDefinitions
+	local enemyType = EntityManager.getComponent(entityId, "EnemyType")
+	if enemyType and enemyType.enemyId then
+		local EnemyDefinitions = require(ReplicatedStorage.Shared.EnemyDefinitions)
+		local enemyDef = EnemyDefinitions:GetEnemy(enemyType.enemyId)
+		if enemyDef and enemyDef.health then
+			humanoid.MaxHealth = enemyDef.health
+			humanoid.Health = enemyDef.health
+			print("❤️ Set entity", entityId, "health to", enemyDef.health .. "/" .. enemyDef.health)
+		else
+			-- Fallback to default health
+			humanoid.MaxHealth = 100
+			humanoid.Health = 100
+			print("❤️ Set entity", entityId, "health to default 100/100")
+		end
+	else
+		-- Fallback to default health
+		humanoid.MaxHealth = 100
+		humanoid.Health = 100
+		print("❤️ Set entity", entityId, "health to default 100/100")
 	end
 end
 
@@ -287,9 +309,19 @@ function ModelCreationSystem.cleanup(entityId)
 		print("🧹 Cleaned up animation state for entity", entityId)
 	end
 	
-	-- Clean up model
+	-- Check if the enemy is dead (ragdolled) - if so, preserve the model
 	if model and model.model and model.model.Parent then
-		model.model:Destroy()
+		local humanoid = model.model:FindFirstChildOfClass("Humanoid")
+		if humanoid and humanoid.Health <= 0 then
+			-- Enemy is dead/ragdolled - preserve the model for ragdoll physics
+			print("💀 Entity", entityId, "is dead/ragdolled - preserving model for ragdoll physics")
+			-- Remove the model component but keep the actual model in workspace
+			EntityManager.removeComponent(entityId, "Model")
+		else
+			-- Enemy is alive - destroy the model normally
+			print("🧹 Entity", entityId, "is alive - destroying model")
+			model.model:Destroy()
+		end
 	end
 end
 
@@ -305,7 +337,8 @@ function ModelCreationSystem._loadAnimationsForEntity(entityId, model)
 	local ANIMATION_IDS = {
 		idle = "rbxassetid://90478240073535",
 		walk = "rbxassetid://180426354",  -- Default R6 walk animation
-		attack = "rbxassetid://136814345857964"
+		attack = "rbxassetid://136814345857964",
+		aim = "rbxassetid://135648359564667"  -- Aiming animation for ranged enemies
 	}
 	
 	local animationSet = Components.create("AnimationSet", {})
@@ -329,6 +362,13 @@ function ModelCreationSystem._loadAnimationsForEntity(entityId, model)
 		local attackAnimation = Instance.new("Animation")
 		attackAnimation.AnimationId = ANIMATION_IDS.attack
 		animationSet.attack = humanoid:LoadAnimation(attackAnimation)
+	end
+	
+	-- Load aim animation
+	if ANIMATION_IDS.aim then
+		local aimAnimation = Instance.new("Animation")
+		aimAnimation.AnimationId = ANIMATION_IDS.aim
+		animationSet.aim = humanoid:LoadAnimation(aimAnimation)
 	end
 	
 	-- Set up movement detection for real-time animation sync
@@ -410,16 +450,89 @@ function ModelCreationSystem._playEnemyAnimation(model, animName)
 	end
 end
 
+-- Public function to play animation for an entity (used by other systems)
+function ModelCreationSystem.playAnimationForEntity(entityId, animName)
+	local model = EntityManager.getComponent(entityId, "Model")
+	if not model or not model.model then
+		return
+	end
+	
+	ModelCreationSystem._playEnemyAnimation(model.model, animName)
+end
+
 -- Add ragdoll logic for all enemies
 local CollectionService = game:GetService("CollectionService")
+local PhysicsService = game:GetService("PhysicsService")
+
+-- Ensure collision groups are set up
+local function setupCollisionGroups()
+    -- Register groups if they don't exist (using new API)
+    pcall(function() PhysicsService:RegisterCollisionGroup("Enemies") end)
+    pcall(function() PhysicsService:RegisterCollisionGroup("Ragdolls") end)
+    pcall(function() PhysicsService:RegisterCollisionGroup("Items") end)
+    -- Enemies ignore ragdolls and items
+    PhysicsService:CollisionGroupSetCollidable("Enemies", "Ragdolls", false)
+    PhysicsService:CollisionGroupSetCollidable("Enemies", "Items", false)
+    -- Ragdolls and items still collide with Default (ground, walls, etc.)
+end
+setupCollisionGroups()
 
 function onDeathOfTheEnemy(enemy)
     local humanoid = enemy:FindFirstChildOfClass("Humanoid")
     if not humanoid then return end
+    
+    -- Find the entity ID for this enemy model
+    local entityId = nil
+    for _, id in ipairs(EntityManager.getEntitiesWith("Model")) do
+        local model = EntityManager.getComponent(id, "Model")
+        if model and model.model == enemy then
+            entityId = id
+            break
+        end
+    end
+    
+    if entityId then
+        print("💀 Enemy entity", entityId, "died - removing AI/combat components, preserving ragdoll")
+        
+        -- Remove all enemy functionality components while preserving ragdoll physics
+        EntityManager.removeComponent(entityId, "EnemyAI")
+        EntityManager.removeComponent(entityId, "Combat") 
+        EntityManager.removeComponent(entityId, "EnemyType")
+        EntityManager.removeComponent(entityId, "CombatStats")
+        EntityManager.removeComponent(entityId, "EnemyChat")
+        EntityManager.removeComponent(entityId, "AnimationSet")
+        
+        -- Remove the Model component but keep the actual model in workspace for ragdoll
+        EntityManager.removeComponent(entityId, "Model")
+        
+        print("🧹 Removed all enemy functionality components for entity", entityId)
+    end
+    
     -- Hide health bar
     humanoid.DisplayDistanceType = Enum.HumanoidDisplayDistanceType.None
+    -- Disable joint breaking to preserve ragdoll physics
+    humanoid.BreakJointsOnDeath = false
+    humanoid.RequiresNeck = false
+    -- Disable state machine to allow falling over
+    humanoid.EvaluateStateMachine = false
     -- Prevent standing up
     humanoid.PlatformStand = true
+    
+    -- Set CanCollide = true and assign to Ragdolls group for all limb parts
+    for _, part in ipairs(enemy:GetChildren()) do
+        if part:IsA("BasePart") and (part.Name:find("Arm") or part.Name:find("Leg") or part.Name == "Torso" or part.Name == "Head") then
+            part.CanCollide = true
+            PhysicsService:SetPartCollisionGroup(part, "Ragdolls")
+        end
+    end
+    
+    -- Set HumanoidRootPart collision group to Default for consistency with player ragdolls
+    local humanoidRootPart = enemy:FindFirstChild("HumanoidRootPart")
+    if humanoidRootPart then
+        humanoidRootPart.CanCollide = false
+        PhysicsService:SetPartCollisionGroup(humanoidRootPart, "Default")
+    end
+    
     -- Replace Motor6Ds with BallSocketConstraints (except Neck)
     local torso = enemy:FindFirstChild("Torso")
     if torso then
@@ -430,8 +543,16 @@ function onDeathOfTheEnemy(enemy)
             end
         end
     end
+    
+    -- Add a small delay to ensure ragdoll state is established
+    task.wait(0.1)
     -- Tag as Draggable
     CollectionService:AddTag(enemy, "Draggable")
+    
+    -- Tag as Sacrifice for altar system
+    CollectionService:AddTag(enemy, "Sacrifice")
+    
+    print("✅ Ragdoll physics preserved for enemy:", enemy.Name)
 end
 
 function createSocket(torso, part, c0, c1)

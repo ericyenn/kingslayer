@@ -158,6 +158,12 @@ local systemInitializationOrder = {
     },
     
     {
+        name = "FunctionalSystem",
+        module = require(script.Systems.FunctionalSystem),
+        maxRetries = 2
+    },
+    
+    {
         name = "AudioSystem",
         module = require(script.Systems.AudioSystem),
         maxRetries = 2
@@ -194,6 +200,45 @@ local systemInitializationOrder = {
     {
         name = "DialogueUI",
         module = require(script.DialogueUI),
+        maxRetries = 2
+    },
+    
+    -- Altar systems
+    {
+        name = "AltarUISystem",
+        module = require(script.Systems.AltarUISystem),
+        maxRetries = 2
+    },
+    
+    {
+        name = "SacrificeIndicator",
+        module = require(script.Systems.SacrificeIndicator),
+        maxRetries = 2
+    },
+    
+    {
+        name = "PrayerSystem",
+        module = require(script.Systems.PrayerSystem),
+        maxRetries = 2
+    },
+    
+    {
+        name = "RevivePromptSystem",
+        module = require(script.Systems.RevivePromptSystem),
+        maxRetries = 2
+    },
+
+    -- Projectile system (new)
+    {
+        name = "ProjectileRenderer",
+        module = require(script.ProjectileRenderer),
+        maxRetries = 2
+    },
+
+    -- Spectate UI (new)
+    {
+        name = "SpectateUI",
+        module = require(script.UI.SpectateUI),
         maxRetries = 2
     },
     

@@ -164,6 +164,65 @@ ItemDefinitions.items = {
         }
     },
     
+    revive_plush = {
+        name = "Revive Plush",
+        description = "A magical plush toy that can bring players back to life. Use near a dead player to revive them.",
+        model = "RevivePlushModel",
+        category = Categories.Functional,
+        actionType = ActionConstants.Functional.REVIVE_PLUSH,
+        preventClickConsume = true, -- Prevent normal click consumption
+        actionData = {
+            -- Revive action data
+        },
+        components = {
+            Draggable = {
+                force = 6000,
+                maxDistance = 30,
+                dampening = 0.5
+            },
+            Hoverable = {
+                displayName = "Revive Plush",
+                description = "A magical plush toy that can bring players back to life. Use near a dead player to revive them.",
+                highlightColor = Color3.fromRGB(255, 182, 193) -- Light pink
+            },
+            Inventoryable = {
+                stackable = false,
+                maxStack = 1,
+                inventoryIcon = "🧸",
+                canPickup = true
+            }
+        }
+    },
+    
+    philosophers_stone = {
+        name = "Philosopher's Stone",
+        description = "A legendary artifact with the power to transmute materials and grant eternal life. The ultimate reward for the most sacred of sacrifices.",
+        model = "PhilosophersStoneModel",
+        category = Categories.Functional,
+        actionType = ActionConstants.Functional.PHILOSOPHERS_STONE,
+        actionData = {
+            -- Philosopher's stone action data - placeholder for future customization
+        },
+        components = {
+            Draggable = {
+                force = 8000,
+                maxDistance = 40,
+                dampening = 0.7
+            },
+            Hoverable = {
+                displayName = "Philosopher's Stone",
+                description = "A legendary artifact with the power to transmute materials and grant eternal life. The ultimate reward for the most sacred of sacrifices.",
+                highlightColor = Color3.fromRGB(255, 215, 0) -- Gold color
+            },
+            Inventoryable = {
+                stackable = false,
+                maxStack = 1,
+                inventoryIcon = "💎",
+                canPickup = true
+            }
+        }
+    },
+    
     -- ITEMS - No click actions, basic materials
     wood = {
         name = "Wood",

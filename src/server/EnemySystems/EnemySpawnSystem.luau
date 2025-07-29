@@ -106,8 +106,9 @@ function EnemySpawnSystem.update(deltaTime)
 		-- Clear out any dead entities from the spawner's list
 		for i = #spawner.spawnedEntities, 1, -1 do
 			local spawnedEntityId = spawner.spawnedEntities[i]
-			-- Check if entity still exists
-			if not EntityManager.getComponent(spawnedEntityId, "Health") then
+			-- Check if entity still exists (check for Model component)
+			local model = EntityManager.getComponent(spawnedEntityId, "Model")
+			if not model or not model.model or not model.model.Parent then
 				table.remove(spawner.spawnedEntities, i)
 			end
 		end

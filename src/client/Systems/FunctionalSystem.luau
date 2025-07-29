@@ -47,6 +47,16 @@ functionalRegistry:RegisterAction(ActionConstants.Functional.SUMMONER, function(
     print("  - Boss spawn request sent to server")
 end)
 
+-- Revive plush action - only triggered via proximity prompt
+functionalRegistry:RegisterAction(ActionConstants.Functional.REVIVE_PLUSH, function(player, itemDef, target, actionData)
+    print("🧸 Revive Plush!")
+    print("  - Item:", itemDef.name)
+    print("  - This item can only be used via proximity prompt near dead players")
+    
+    -- Don't consume the item here - it will be consumed by the revive system
+    -- when a successful revive is performed
+end)
+
 -- Set default action for functional items without specific actions
 functionalRegistry:SetDefaultAction(function(player, itemDef, target, actionData)
     print("⚡ Functional Item Action!")
@@ -67,6 +77,12 @@ end
 
 function FunctionalSystem:Use(itemDef, player, target)
     print("FunctionalSystem: Use called for", itemDef.name)
+    
+    -- Check if item should prevent click consumption
+    if itemDef.preventClickConsume then
+        print("  - Item prevents click consumption:", itemDef.name)
+        return
+    end
     
     local actionType = itemDef.actionType or ActionConstants.Functional.DEFAULT
     local actionData = itemDef.actionData or {}

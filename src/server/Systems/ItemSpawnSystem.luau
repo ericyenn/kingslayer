@@ -8,6 +8,7 @@ local ItemLootPools = require(ReplicatedStorage.Shared.ItemLootPools)
 local ItemSpawnerSetup = require(script.Parent.ItemSpawnerSetup)
 local ItemDefinitions = require(ReplicatedStorage.Shared.ItemDefinitions)
 local Constants = require(ReplicatedStorage.Shared.Constants)
+local PhysicsService = game:GetService("PhysicsService")
 
 local ItemPoolSpawnSystem = {}
 
@@ -121,6 +122,7 @@ function ItemPoolSpawnSystem.SpawnItem(itemId, position)
         warn("Item definition not found:", itemId)
         return nil
     end
+    
     local item = nil
     -- Try to load custom model first
     if itemDefinition.model then
@@ -129,7 +131,6 @@ function ItemPoolSpawnSystem.SpawnItem(itemId, position)
             local modelTemplate = modelsFolder:FindFirstChild(itemDefinition.model)
             if modelTemplate then
                 item = modelTemplate:Clone()
-                item.Name = itemDefinition.name
                 print("Loaded custom model:", itemDefinition.model, "for", itemDefinition.name)
             else
                 warn("Model not found in ReplicatedStorage/Models/:", itemDefinition.model)
@@ -138,18 +139,24 @@ function ItemPoolSpawnSystem.SpawnItem(itemId, position)
             warn("Models folder not found in ReplicatedStorage")
         end
     end
+    
+    -- Create fallback part if no model found
     if not item then
         print("Using fallback basic part for:", itemDefinition.name)
         item = Instance.new("Part")
-        item.Name = itemDefinition.name
         item.Size = Vector3.new(2, 1, 0.5)
         item.BrickColor = BrickColor.Random()
         item.TopSurface = Enum.SurfaceType.Smooth
         item.BottomSurface = Enum.SurfaceType.Smooth
         item.Material = Enum.Material.Metal
     end
+    
+    -- ALWAYS set the correct name from item definition
+    item.Name = itemDefinition.name
+    print("Spawned item with name:", item.Name, "for itemId:", itemId)
     local primaryPart = item
     if item:IsA("Model") then
+        -- Ensure model has a primary part
         if not item.PrimaryPart then
             local largestPart = nil
             local largestVolume = 0
@@ -164,24 +171,86 @@ function ItemPoolSpawnSystem.SpawnItem(itemId, position)
             end
             if largestPart then
                 item.PrimaryPart = largestPart
+                print("Set PrimaryPart for model:", itemDefinition.name, "to:", largestPart.Name)
+            else
+                warn("No suitable part found for PrimaryPart in model:", itemDefinition.name)
             end
         end
         primaryPart = item.PrimaryPart
-    end
-    if primaryPart then
-        if item:IsA("Model") then
+        
+        -- Position the model using its primary part
+        if primaryPart then
             item:SetPrimaryPartCFrame(CFrame.new(position))
+            -- Assign all parts to 'Items' collision group
+            for _, part in ipairs(item:GetDescendants()) do
+                if part:IsA("BasePart") then
+                    part.CollisionGroup = "Items"
+                    part.Anchored = false
+                end
+            end
         else
-            primaryPart.Position = position
+            warn("Could not position model - no primary part found:", itemDefinition.name)
         end
-        primaryPart.Anchored = false
     else
-        warn("Could not position item - no primary part found:", itemDefinition.name)
+        -- Handle single part items
+        if primaryPart then
+            primaryPart.Position = position
+            primaryPart.CollisionGroup = "Items"
+            primaryPart.Anchored = false
+        else
+            warn("Could not position item - no primary part found:", itemDefinition.name)
+        end
     end
     item.Parent = workspace
     CollectionService:AddTag(item, Constants.TAGS.DRAGGABLE_ITEM)
+    
+    -- Add ECS components to the item (server-side setup)
+    ItemPoolSpawnSystem:AddECSComponentsToItem(item, itemDefinition)
+    
     print("Spawned item:", itemDefinition.name, "at", position)
     return item
+end
+
+-- Add ECS components to spawned items
+function ItemPoolSpawnSystem:AddECSComponentsToItem(item, itemDefinition)
+    local ECS = require(ReplicatedStorage.Shared.ECS)
+    local Draggable = require(ReplicatedStorage.Shared.Components.Draggable)
+    local Hoverable = require(ReplicatedStorage.Shared.Components.Hoverable)
+    local Inventoryable = require(ReplicatedStorage.Shared.Components.Inventoryable)
+    
+    -- Add components based on item definition
+    if itemDefinition.components then
+        for componentName, config in pairs(itemDefinition.components) do
+            local component = nil
+            
+            if componentName == "Draggable" then
+                component = Draggable.new(config)
+            elseif componentName == "Hoverable" then
+                component = Hoverable.new(config)
+            elseif componentName == "Inventoryable" then
+                component = Inventoryable.new(config)
+            end
+            
+            if component then
+                ECS:AddComponent(item, componentName, component)
+                print("Added", componentName, "component to", item.Name)
+            else
+                warn("Failed to create component:", componentName, "for", item.Name)
+            end
+        end
+    else
+        -- Add default components if none specified
+        local defaultComponents = {
+            Draggable = Draggable.new({ force = 8000, maxDistance = 35, dampening = 0.6 }),
+            Hoverable = Hoverable.new({ displayName = item.Name, description = "A mysterious item." }),
+            Inventoryable = Inventoryable.new({ canPickup = true, stackable = false, maxStack = 1 })
+        }
+        
+        for componentName, component in pairs(defaultComponents) do
+            ECS:AddComponent(item, componentName, component)
+            print("Added default", componentName, "component to", item.Name)
+        end
+    end
 end
 
 return ItemPoolSpawnSystem 

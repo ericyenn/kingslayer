@@ -23,7 +23,6 @@ local dragDistance = 5 -- Distance from camera to maintain object
 local dragTargetAttachment = nil
 local dragObjectAttachment = nil
 local alignPosition = nil
-local alignOrientation = nil
 
 -- Connections
 local heartbeatConnection = nil
@@ -153,15 +152,19 @@ function DragSystem:RaycastFromMouse()
 end
 
 function DragSystem:IsObjectDraggable(object)
-    -- Support both items and ragdoll models
+    -- Support both items and models
     local isModel = object.Parent and CollectionService:HasTag(object.Parent, "Draggable")
-    return CollectionService:HasTag(object, Constants.TAGS.DRAGGABLE_ITEM) or isModel
+    local isDraggableItem = CollectionService:HasTag(object, Constants.TAGS.DRAGGABLE_ITEM)
+    local isDraggableModel = object.Parent and CollectionService:HasTag(object.Parent, Constants.TAGS.DRAGGABLE_ITEM)
+    
+    return isDraggableItem or isModel or isDraggableModel
 end
 
 function DragSystem:StartHover(object)
     -- Highlight the correct object (parent if model, else self)
     local isModel = object.Parent and CollectionService:HasTag(object.Parent, "Draggable")
-    local highlightTarget = isModel and object.Parent or object
+    local isDraggableModel = object.Parent and CollectionService:HasTag(object.Parent, Constants.TAGS.DRAGGABLE_ITEM)
+    local highlightTarget = (isModel or isDraggableModel) and object.Parent or object
     local highlight = Instance.new("Highlight")
     highlight.FillColor = Constants.HOVER.HIGHLIGHT_COLOR
     highlight.FillTransparency = 0.5
@@ -205,6 +208,10 @@ function DragSystem:StopHover(object)
 end
 
 function DragSystem:HandleMouseDown()
+    -- Prevent dragging if player is dead/ragdolled
+    if CollectionService:HasTag(player, "Dead") then
+        return
+    end
     -- Check if player has equipped tool - if so, skip all drag processing
     if self:HasEquippedTool() then
         return -- Let tool handle the click
@@ -232,6 +239,10 @@ function DragSystem:HandleMouseDown()
 end
 
 function DragSystem:HandleMouseUp()
+    -- Prevent dragging if player is dead/ragdolled
+    if CollectionService:HasTag(player, "Dead") then
+        return
+    end
     -- Check if player has equipped tool - if so, skip all drag processing
     if self:HasEquippedTool() then
         return -- Let tool handle the mouse up
@@ -254,6 +265,7 @@ function DragSystem:HandleMouseUp()
 end
 
 function DragSystem:PickupObject(object)
+    print("DEBUG: PickupObject called for:", object.Name, "Parent:", object.Parent.Name) -- Debug
     print("Attempting server pickup request for:", object.Name) -- Debug
     
     -- Check if object is within pickup range
@@ -289,7 +301,7 @@ function DragSystem:PickupObject(object)
     dragObjectAttachment.Name = "DragAttachment"
     dragObjectAttachment.Parent = object
     
-    -- Create constraints with anti-exploit settings
+    -- Create position constraint with anti-exploit settings
     alignPosition = Instance.new("AlignPosition")
     alignPosition.MaxForce = 25000 -- Reduced force to prevent violent movements
     alignPosition.MaxVelocity = 50 -- Limited velocity to prevent flick exploits
@@ -297,14 +309,6 @@ function DragSystem:PickupObject(object)
     alignPosition.Attachment0 = dragObjectAttachment
     alignPosition.Attachment1 = dragTargetAttachment
     alignPosition.Parent = object
-    
-    alignOrientation = Instance.new("AlignOrientation")
-    alignOrientation.MaxTorque = 25000 -- Reduced torque
-    alignOrientation.MaxAngularVelocity = 20 -- Limited angular velocity
-    alignOrientation.Responsiveness = 50 -- Smoother rotation
-    alignOrientation.Attachment0 = dragObjectAttachment
-    alignOrientation.Attachment1 = dragTargetAttachment
-    alignOrientation.Parent = object
     
     -- Add a BodyVelocity for additional dampening
     local bodyVelocity = Instance.new("BodyVelocity")
@@ -314,6 +318,24 @@ function DragSystem:PickupObject(object)
     bodyVelocity.Name = "DragDampening"
     
     grabbedObject = object
+    
+    -- For enemy ragdolls, enforce CanCollide = true on all limb parts
+    local parentModel = object.Parent
+    local humanoid = parentModel and parentModel:FindFirstChildOfClass("Humanoid")
+    local isEnemyRagdoll = humanoid and parentModel and parentModel.Parent == workspace
+    
+    print("DEBUG: Enemy ragdoll check - humanoid:", humanoid ~= nil, "parent:", parentModel and parentModel.Name or "nil", "isEnemyRagdoll:", isEnemyRagdoll)
+    
+    if isEnemyRagdoll then
+        print("DEBUG CLIENT: Enemy ragdoll detected, enforcing CanCollide = true")
+        for _, part in ipairs(parentModel:GetChildren()) do
+            if part:IsA("BasePart") and (part.Name:find("Arm") or part.Name:find("Leg") or part.Name == "Torso" or part.Name == "Head") then
+                local oldCollide = part.CanCollide
+                part.CanCollide = true
+                print("  ", part.Name, "CanCollide:", oldCollide, "->", part.CanCollide)
+            end
+        end
+    end
     
     -- Stop hovering since we're now dragging
     if hoveredObject == object then
@@ -340,15 +362,10 @@ function DragSystem:DropObject(object)
         end
     end
     
-    -- Clean up constraints
+    -- Clean up constraint
     if alignPosition then
         alignPosition:Destroy()
         alignPosition = nil
-    end
-    
-    if alignOrientation then
-        alignOrientation:Destroy()
-        alignOrientation = nil
     end
     
     if dragObjectAttachment then
@@ -360,6 +377,22 @@ function DragSystem:DropObject(object)
     local bodyVelocity = object:FindFirstChild("DragDampening")
     if bodyVelocity then
         bodyVelocity:Destroy()
+    end
+    
+    -- For enemy ragdolls, ensure CanCollide = true is maintained after drop
+    local parentModel = object.Parent
+    local humanoid = parentModel and parentModel:FindFirstChildOfClass("Humanoid")
+    local isEnemyRagdoll = humanoid and parentModel and parentModel.Parent == workspace
+    
+    if isEnemyRagdoll then
+        print("DEBUG CLIENT DROP: Enemy ragdoll detected, ensuring CanCollide = true")
+        for _, part in ipairs(parentModel:GetChildren()) do
+            if part:IsA("BasePart") and (part.Name:find("Arm") or part.Name:find("Leg") or part.Name == "Torso" or part.Name == "Head") then
+                local oldCollide = part.CanCollide
+                part.CanCollide = true
+                print("  ", part.Name, "CanCollide:", oldCollide, "->", part.CanCollide)
+            end
+        end
     end
     
     grabbedObject = nil

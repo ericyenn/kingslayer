@@ -76,6 +76,7 @@ function CombatSystem.update(deltaTime)
 	local combatsProcessed = 0
 	
 	-- Get all entities with Combat and Model components (removed Position dependency)
+	-- Note: Melee enemies are skipped in _processCombat to avoid duplicate damage
 	local combatEntities = EntityManager.getEntitiesWithAll({"Combat", "Model"})
 	
 	for _, entityId in ipairs(combatEntities) do
@@ -106,6 +107,14 @@ end
 
 -- Process a single combat interaction
 function CombatSystem._processCombat(attackerEntityId, combat, attackerModel, currentTime)
+	-- Skip melee enemies - they are handled by MeleeChaseHandler
+	local enemyType = EntityManager.getComponent(attackerEntityId, "EnemyType")
+	if enemyType and enemyType.enemyType == "melee" then
+		-- Melee enemies are handled by MeleeChaseHandler, so we skip them here
+		-- to avoid duplicate damage application
+		return
+	end
+	
 	-- Check attack cooldown (use per-enemy cooldown, fallback to global config)
 	local attackCooldown = combat.attackCooldown or CONFIG.ATTACK_COOLDOWN
 	if combat.lastAttackTime and (currentTime - combat.lastAttackTime) < attackCooldown then
@@ -142,6 +151,17 @@ function CombatSystem._processCombat(attackerEntityId, combat, attackerModel, cu
 			playerHealth = {current = humanoid.Health, max = humanoid.MaxHealth}
 			targetModel = {part = target:FindFirstChild("HumanoidRootPart")}
 			print("🎯 Player target detected - Character:", target.Name, "Health:", humanoid.Health)
+			-- Check if player has Dead tag, if so, remove Combat and skip
+			local player = game.Players:GetPlayerFromCharacter(target)
+			if player then
+				local CollectionService = game:GetService("CollectionService")
+				print("[CombatSystem] Checking Dead tag for player:", player.Name, CollectionService:HasTag(player, "Dead"))
+				if CollectionService:HasTag(player, "Dead") then
+					print("[CombatSystem] Target player is dead, removing Combat for entity", attackerEntityId)
+					EntityManager.removeComponent(attackerEntityId, "Combat")
+					return
+				end
+			end
 		else
 			-- Not a valid player target
 			print("⚠️ Invalid player target (no humanoid), removing Combat for entity", attackerEntityId)
@@ -193,9 +213,26 @@ function CombatSystem._processCombat(attackerEntityId, combat, attackerModel, cu
 		return -- Target is invincible
 	end
 	
-	-- Attack successful but no damage dealt (damage functionality removed)
+	-- Apply damage to target
 	local damage = combat.damage or 10
-	print("🎯 ATTACK EXECUTED! Entity", attackerEntityId, "attacked", target.Name, "(damage:", damage, ") - No damage applied")
+	
+	if isPlayer then
+		-- Apply damage to player using DamageSystem
+		local humanoid = target:FindFirstChildOfClass("Humanoid")
+		if humanoid then
+			-- Import DamageSystem here to avoid circular dependencies
+			local DamageSystem = require(script.Parent.Parent.Systems.DamageSystem)
+			DamageSystem:ApplyDamage(humanoid, damage, nil, "EnemyMeleeAttack")
+		end
+	else
+		-- Apply damage to enemy using Humanoid.Health directly
+		local humanoid = target:FindFirstChildOfClass("Humanoid")
+		if humanoid then
+			humanoid.Health = math.max(0, humanoid.Health - damage)
+		end
+	end
+	
+	print("🎯 ATTACK EXECUTED! Entity", attackerEntityId, "attacked", target.Name, "(damage:", damage, ")")
 	
 	-- Set invincibility
 	invincibilityTimers[target] = currentTime + CONFIG.INVINCIBILITY_TIME
@@ -208,52 +245,33 @@ function CombatSystem._processCombat(attackerEntityId, combat, attackerModel, cu
 	CombatSystem._createDamageEffect(targetPosition, damage)
 	CombatSystem._createHitEffect(targetModel)
 	
-	-- Don't remove combat component since no damage is dealt (target won't die)
+	-- Check if target died
+	if isPlayer then
+		local humanoid = target:FindFirstChildOfClass("Humanoid")
+		if humanoid and humanoid.Health <= 0 then
+			print("💀 Player", target.Name, "defeated by entity", attackerEntityId)
+		end
+	else
+		-- For enemies, let the Humanoid.Died event handle death/ragdoll
+		local humanoid = target:FindFirstChildOfClass("Humanoid")
+		if humanoid and humanoid.Health <= 0 then
+			print("💀 Enemy", target.Name, "defeated by entity", attackerEntityId)
+			-- Let ModelCreationSystem handle ragdoll via Humanoid.Died event
+		end
+	end
 end
 
--- Simple health regeneration
+-- Simple health regeneration (removed for enemies - they use Humanoid.Health)
 function CombatSystem._processHealthRegen(currentTime)
-	-- Only regen every few seconds
-	if currentTime % 3 < 0.1 then -- Approximately every 3 seconds
-		local healthEntities = EntityManager.getEntitiesWith("Health")
-		
-		for _, entityId in ipairs(healthEntities) do
-			local health = EntityManager.getComponent(entityId, "Health")
-			if health and health.current > 0 and health.current < health.max then
-				local newHealth = math.min(health.max, health.current + 1)
-				health.current = newHealth
-				EntityManager.addComponent(entityId, "Health", health)
-			end
-		end
-	end
+	-- Health regeneration removed for enemies
+	-- Enemies now use Humanoid.Health directly, no custom Health component needed
 end
 
--- Remove dead entities
+-- Remove dead entities (only for players now, enemies handled by Humanoid.Died)
 function CombatSystem._removeDeadEntities()
-	local entitiesToRemove = {}
-	
-	local healthEntities = EntityManager.getEntitiesWith("Health")
-	
-	for _, entityId in ipairs(healthEntities) do
-		local health = EntityManager.getComponent(entityId, "Health")
-		if health and health.current <= 0 then
-			table.insert(entitiesToRemove, entityId)
-		end
-	end
-	
-	for _, entityId in ipairs(entitiesToRemove) do
-		-- Create death effect if has model
-		local model = EntityManager.getComponent(entityId, "Model")
-		if model then
-			CombatSystem._createDeathEffect(model)
-		end
-		
-		-- Clean up entity-specific data to prevent memory leaks
-		invincibilityTimers[entityId] = nil
-		
-		-- Remove entity
-		EntityManager.removeEntity(entityId)
-	end
+	-- This function is now only for cleanup, not entity removal
+	-- Enemies are handled by ModelCreationSystem ragdoll system
+	-- Players are handled by PlayerRagdollSystem
 end
 
 -- Clean up when entity is destroyed (called by external systems)

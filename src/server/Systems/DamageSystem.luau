@@ -77,6 +77,16 @@ function DamageSystem:ProcessDamageRequest(player, targetPart, weaponName, damag
         print("DamageSystem: Target has no Humanoid, cannot take damage")
         return
     end
+    -- Prevent damage to dead players
+    local targetPlayer = Players:GetPlayerFromCharacter(targetHumanoid.Parent)
+    if targetPlayer then
+        local CollectionService = game:GetService("CollectionService")
+        print("[DamageSystem] Checking Dead tag for player:", targetPlayer.Name, CollectionService:HasTag(targetPlayer, "Dead"))
+        if CollectionService:HasTag(targetPlayer, "Dead") then
+            print("DamageSystem: Player ", targetPlayer.Name, " is dead, ignoring damage.")
+            return
+        end
+    end
     
     -- Apply damage
     self:ApplyDamage(targetHumanoid, damageAmount, player, weaponName)
