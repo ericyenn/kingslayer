@@ -66,6 +66,24 @@ function MovementSystem.initialize()
     return true
 end
 
+-- Stop movement immediately (for idle state transitions)
+function MovementSystem.stopMovement(entityId, model)
+    if not model or not model.humanoid then
+        return
+    end
+    
+    -- Stop movement by moving to current position
+    model.humanoid:MoveTo(model.part.Position)
+    model.humanoid.WalkSpeed = 0
+    
+    -- Clean up any movement tracking
+    entityLastPlayerPositions[entityId] = nil
+    entityLastMoveToTime[entityId] = nil
+    rangedEnemyRandomMoveTime[entityId] = nil
+    
+    print("🛑 MovementSystem: Stopped movement for entity", entityId)
+end
+
 -- Main update function
 function MovementSystem.update(deltaTime)
     local currentTime = tick()
@@ -89,6 +107,12 @@ function MovementSystem.update(deltaTime)
         local enemyType = EntityManager.getComponent(entityId, "EnemyType")
         
         if enemyAI and model and model.part and model.humanoid then
+            -- Check if enemy is in idle state - stop movement immediately
+            if enemyAI.state == "idle" then
+                MovementSystem.stopMovement(entityId, model)
+                continue
+            end
+            
             -- Check if any player is within activation zone (performance optimization)
             local isPlayerInActivationZone = false
             for _, player in pairs(Players:GetPlayers()) do
@@ -122,13 +146,9 @@ function MovementSystem.update(deltaTime)
                 MovementSystem._handleChaseMovement(entityId, enemyAI, model, enemyType, currentTime)
                 movementsProcessed = movementsProcessed + 1
             elseif currentState == "patrol" then
-                -- For patrol, only set new patrol targets occasionally
-                local lastPatrolTime = enemyAI.lastPatrolTime or 0
-                if currentTime - lastPatrolTime > 3 then -- Set new patrol target every 3 seconds
-                    MovementSystem._setRandomPatrolTarget(entityId, model, enemyAI)
-                    enemyAI.lastPatrolTime = currentTime
-                    EntityManager.addComponent(entityId, "EnemyAI", enemyAI)
-                end
+                -- Handle patrol movement
+                MovementSystem._handlePatrolMovement(entityId, enemyAI, model, currentTime)
+                movementsProcessed = movementsProcessed + 1
             elseif currentState == "idle" then
                 -- Stop movement when in idle state
                 model.humanoid:MoveTo(model.part.Position)
@@ -146,10 +166,37 @@ end
 function MovementSystem._handlePatrolMovement(entityId, enemyAI, model, currentTime)
     -- Check if we need to set a new patrol target
     local lastPatrolTime = enemyAI.lastPatrolTime or 0
-    if currentTime - lastPatrolTime > 3 then -- Set new patrol target every 3 seconds
+    local patrolTarget = enemyAI.patrolTarget
+    
+    -- Set initial patrol target if none exists
+    if not patrolTarget then
+        print("🏃 MovementSystem: Setting initial patrol target for entity", entityId)
         MovementSystem._setRandomPatrolTarget(entityId, model, enemyAI)
         enemyAI.lastPatrolTime = currentTime
         EntityManager.addComponent(entityId, "EnemyAI", enemyAI)
+        return
+    end
+    
+    -- Check if we've reached the current patrol target or need a new one
+    local distanceToTarget = (model.part.Position - patrolTarget).Magnitude
+    local timeSinceLastPatrol = currentTime - lastPatrolTime
+    
+    -- Set new patrol target if we're close to current target or too much time has passed
+    if distanceToTarget < 3 or timeSinceLastPatrol > 10 then
+        print("🏃 MovementSystem: Setting new patrol target for entity", entityId, "distance:", math.floor(distanceToTarget), "time:", math.floor(timeSinceLastPatrol))
+        MovementSystem._setRandomPatrolTarget(entityId, model, enemyAI)
+        enemyAI.lastPatrolTime = currentTime
+        EntityManager.addComponent(entityId, "EnemyAI", enemyAI)
+    else
+        -- Ensure we're still moving to the current target
+        local baseSpeed = enemyAI.speed or CONFIG.DEFAULT_SPEED
+        model.humanoid.WalkSpeed = baseSpeed * 0.7
+        model.humanoid:MoveTo(patrolTarget)
+        
+        -- Debug: Print patrol movement occasionally
+        if math.random() < 0.01 then -- 1% chance to print
+            print("🏃 MovementSystem: Entity", entityId, "patrolling to", patrolTarget, "distance:", math.floor(distanceToTarget), "speed:", baseSpeed * 0.7)
+        end
     end
 end
 
@@ -301,7 +348,17 @@ function MovementSystem._setRandomPatrolTarget(entityId, model, enemyAI)
         math.sin(angle) * distance
     )
     
+    -- Set proper walk speed for patrol movement
+    local baseSpeed = enemyAI.speed or CONFIG.DEFAULT_SPEED
+    model.humanoid.WalkSpeed = baseSpeed * 0.7 -- Slightly slower for patrol
+    
+    -- Move to the patrol target
     model.humanoid:MoveTo(targetPos)
+    
+    -- Store the target position for tracking
+    enemyAI.patrolTarget = targetPos
+    
+    print("🏃 MovementSystem: Set patrol target for entity", entityId, "to", targetPos, "speed:", baseSpeed * 0.7)
 end
 
 -- Move to random patrol position (for external calls)

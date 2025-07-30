@@ -156,9 +156,12 @@ function AISystem._setState(entityId, enemyAI, newState)
 			-- Initialize chase state
 			print("[AI] Entity", entityId, "entered chase state")
 		elseif newState == AI_STATES.IDLE then
-			-- Stop movement when entering idle
-			-- MovementSystem will handle stopping movement when appropriate
-			print("[AI] Entity", entityId, "entered idle state, stopped movement")
+			-- Stop movement immediately when entering idle state
+			local model = EntityManager.getComponent(entityId, "Model")
+			if model and model.part then
+				MovementSystem.stopMovement(entityId, model)
+				print("[AI] Entity", entityId, "entered idle state, stopped movement immediately")
+			end
 		end
 		
 		-- Send state update to clients
@@ -212,7 +215,7 @@ function AISystem._handleIdleAnimationComplete(enemyModel, entityId)
 	if enemyAI.state == AI_STATES.IDLE then
 		print("[AI] Entity", entityId, "idle animation completed, transitioning to patrol")
 		AISystem._setState(entityId, enemyAI, AI_STATES.PATROL)
-		AISystem._setRandomPatrolTarget(entityId, model.part.Position)
+		-- MovementSystem will handle setting the patrol target in its update loop
 		enemyAI.target = nil
 		EntityManager.addComponent(entityId, "EnemyAI", enemyAI)
 	else

@@ -371,6 +371,12 @@ function EnemyAnimationSystem._onIdleAnimationComplete(enemyModel)
         return 
     end
     
+    -- Only notify server if enemy is still in idle state
+    if animationData.aiState ~= "idle" then
+        print("🎭 EnemyAnimationSystem: Ignoring idle animation completion for", enemyModel.Name, "- AI state is", animationData.aiState)
+        return
+    end
+    
     print("🎭 EnemyAnimationSystem: Idle animation completed for enemy:", enemyModel.Name)
     
     -- Notify AI system via RemoteEvent with entity ID
@@ -592,7 +598,22 @@ function EnemyAnimationSystem._changeAnimation(enemyModel, newState)
         end
     end
     
-    -- Start new transition
+    -- Handle idle state specially - play idle animation immediately
+    if newState == "idle" then
+        -- Stop any current animations
+        for _, track in pairs(animationData.tracks) do
+            if track.IsPlaying then
+                track:Stop()
+            end
+        end
+        
+        -- Play idle animation immediately
+        EnemyAnimationSystem._playRandomIdleAnimation(enemyModel)
+        animationData.currentState = newState
+        return
+    end
+    
+    -- For non-idle states, use the transition system
     EnemyAnimationSystem._startTransition(enemyModel, currentState, newState)
 end
 
@@ -699,27 +720,37 @@ function EnemyAnimationSystem.TestAnimations()
     -- Find any enemy and test animations
     for enemyModel, animationData in pairs(enemyAnimations) do
         print("🧪 EnemyAnimationSystem: Testing animations for enemy:", enemyModel.Name)
+        print("🧪 Current AI state:", animationData.aiState)
+        print("🧪 Current animation state:", animationData.currentState)
         
-        -- Test idle animations
-        if animationData.idleAnimations then
-            print("🧪 EnemyAnimationSystem: Testing idle animations")
-            for i, idleAnimation in ipairs(animationData.idleAnimations) do
-                print("🧪 EnemyAnimationSystem: Testing idle animation", i)
-                idleAnimation.track:Play()
-                task.wait(2)
-                idleAnimation.track:Stop()
-            end
+        -- Force idle state and test idle animation
+        animationData.aiState = "idle"
+        EnemyAnimationSystem._updateEnemyAnimation(enemyModel)
+        
+        return -- Test with first enemy found
+    end
+    
+    print("🧪 EnemyAnimationSystem: No enemies found for testing")
+end
+
+-- Debug function to check animation status
+function EnemyAnimationSystem.DebugAnimationStatus()
+    print("🔍 EnemyAnimationSystem: Animation Status Report")
+    print("🔍 Total animated enemies:", animatedEnemyCount)
+    
+    for enemyModel, animationData in pairs(enemyAnimations) do
+        print("🔍 Enemy:", enemyModel.Name)
+        print("  - AI State:", animationData.aiState)
+        print("  - Animation State:", animationData.currentState)
+        print("  - Has Idle Animations:", #(animationData.idleAnimations or {}))
+        print("  - Current Idle Animation:", animationData.currentIdleAnimation and "Playing" or "None")
+        print("  - Entity ID:", animationData.entityId)
+        
+        -- Check if idle animation is actually playing
+        if animationData.currentIdleAnimation then
+            print("  - Idle Animation Playing:", animationData.currentIdleAnimation.track.IsPlaying)
+            print("  - Idle Animation Index:", animationData.currentIdleAnimation.index)
         end
-        
-        -- Test walk animation
-        if animationData.tracks.walk then
-            print("🧪 EnemyAnimationSystem: Testing walk animation")
-            animationData.tracks.walk:Play()
-            task.wait(2)
-            animationData.tracks.walk:Stop()
-        end
-        
-        break -- Only test first enemy
     end
 end
 
