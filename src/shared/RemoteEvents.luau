@@ -75,6 +75,11 @@ if RunService:IsServer() then
     local reviveRequestRemote = createRemoteEvent("ReviveRequest")
     local reviveResponseRemote = createRemoteEvent("ReviveResponse")
     
+    -- Server: Create animation system RemoteEvents
+    local setupEnemyAnimationsRemote = createRemoteEvent("SetupEnemyAnimations")
+    local idleAnimationCompleteRemote = createRemoteEvent("IdleAnimationComplete")
+    local enemyAIStateUpdateRemote = createRemoteEvent("EnemyAIStateUpdate")
+    
     print("Server created DragRequest RemoteFunction") -- Debug
     print("Server created InventoryRequest RemoteFunction") -- Debug
     print("Server created ArmorRequest RemoteFunction") -- Debug
@@ -120,6 +125,11 @@ if RunService:IsServer() then
     -- Revive system remotes
     RemoteEvents.ReviveRequest = reviveRequestRemote
     RemoteEvents.ReviveResponse = reviveResponseRemote
+    
+    -- Animation system remotes
+    RemoteEvents.SetupEnemyAnimations = setupEnemyAnimationsRemote
+    RemoteEvents.IdleAnimationComplete = idleAnimationCompleteRemote
+    RemoteEvents.EnemyAIStateUpdate = enemyAIStateUpdateRemote
 else
     -- Client: Wait for the RemoteFunctions to be created by server (existing)
     local dragRequestRemote = ReplicatedStorage:WaitForChild("DragRequest")
@@ -164,6 +174,11 @@ else
     -- Client: Wait for revive system RemoteEvents
     local reviveRequestRemote = ReplicatedStorage:WaitForChild("ReviveRequest")
     local reviveResponseRemote = ReplicatedStorage:WaitForChild("ReviveResponse")
+    
+    -- Client: Wait for animation system RemoteEvents
+    local setupEnemyAnimationsRemote = ReplicatedStorage:WaitForChild("SetupEnemyAnimations")
+    local idleAnimationCompleteRemote = ReplicatedStorage:WaitForChild("IdleAnimationComplete")
+    local enemyAIStateUpdateRemote = ReplicatedStorage:WaitForChild("EnemyAIStateUpdate")
     
     print("Client found DragRequest RemoteFunction") -- Debug
     print("Client found InventoryRequest RemoteFunction") -- Debug
@@ -213,6 +228,11 @@ else
     -- Revive system remotes
     RemoteEvents.ReviveRequest = reviveRequestRemote
     RemoteEvents.ReviveResponse = reviveResponseRemote
+    
+    -- Animation system remotes
+    RemoteEvents.SetupEnemyAnimations = setupEnemyAnimationsRemote
+    RemoteEvents.IdleAnimationComplete = idleAnimationCompleteRemote
+    RemoteEvents.EnemyAIStateUpdate = enemyAIStateUpdateRemote
 end
 
 return RemoteEvents 

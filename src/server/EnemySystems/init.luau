@@ -8,6 +8,7 @@ local Systems = {
 	ModelCreationSystem = require(script.ModelCreationSystem),
 	EnemySpawnSystem = require(script.EnemySpawnSystem),
 	VisualEffectsSystem = require(script.VisualEffectsSystem),
+	MovementSystem = require(script.MovementSystem),
 }
 
 return Systems 

@@ -75,13 +75,7 @@ Components.Model = {
     humanoid = nil          -- Humanoid reference
 }
 
--- Animation management for entities
-Components.AnimationSet = {
-    idle = nil,      -- AnimationTrack for idle animation
-    walk = nil,      -- AnimationTrack for walk animation  
-    attack = nil,    -- AnimationTrack for attack animation
-    current = nil,   -- Currently playing AnimationTrack
-}
+-- Animation system removed - no longer needed
 
 -- Helper function to create a component with custom data
 function Components.create(componentType, customData)

@@ -129,7 +129,7 @@ local function ragdollCharacter(character)
     for _, part in ipairs(character:GetChildren()) do
         if part:IsA("BasePart") and (part.Name:find("Arm") or part.Name:find("Leg") or part.Name == "Torso" or part.Name == "Head") then
             part.CanCollide = true
-            PhysicsService:SetPartCollisionGroup(part, "Ragdolls")
+            part.CollisionGroup = "Ragdolls"
         end
     end
     

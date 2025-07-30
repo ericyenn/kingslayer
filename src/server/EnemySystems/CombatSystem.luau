@@ -1,8 +1,8 @@
 --[[
-CombatSystem.lua
+CombatSystem.lua - SIMPLIFIED VERSION
 
 Core Combat System for processing combat interactions between entities.
-Handles damage calculation, application, and basic visual effects.
+Now only handles ranged and special enemies - melee enemies handled by MeleeChaseHandler.
 ]]
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -30,7 +30,7 @@ CombatSystem.name = "CombatSystem"
 
 -- Configuration
 local CONFIG = {
-	UPDATE_INTERVAL = 1/8, -- 8 FPS updates (much slower for performance)
+	UPDATE_INTERVAL = 1/8, -- 8 FPS updates
 	MAX_COMBATS_PER_FRAME = 8,
 	
 	-- Combat settings
@@ -75,8 +75,8 @@ function CombatSystem.update(deltaTime)
 	
 	local combatsProcessed = 0
 	
-	-- Get all entities with Combat and Model components (removed Position dependency)
-	-- Note: Melee enemies are skipped in _processCombat to avoid duplicate damage
+	-- Get all entities with Combat and Model components
+	-- SKIP melee enemies - they are handled by MeleeChaseHandler
 	local combatEntities = EntityManager.getEntitiesWithAll({"Combat", "Model"})
 	
 	for _, entityId in ipairs(combatEntities) do
@@ -86,6 +86,12 @@ function CombatSystem.update(deltaTime)
 		
 		local combat = EntityManager.getComponent(entityId, "Combat")
 		local model = EntityManager.getComponent(entityId, "Model")
+		local enemyType = EntityManager.getComponent(entityId, "EnemyType")
+		
+		-- SKIP melee enemies - they are handled by MeleeChaseHandler
+		if enemyType and enemyType.enemyType == "melee" then
+			continue
+		end
 		
 		if combat and model and model.part then
 			CombatSystem._processCombat(entityId, combat, model, currentTime)
@@ -93,40 +99,19 @@ function CombatSystem.update(deltaTime)
 		end
 	end
 	
-	-- Process health regeneration (simple)
-	CombatSystem._processHealthRegen(currentTime)
-	
 	-- Perform maintenance every 60 seconds
 	if currentTime % 60 < CONFIG.UPDATE_INTERVAL then
 		CombatSystem.performMaintenance()
 	end
-	
-	-- Remove dead entities
-	CombatSystem._removeDeadEntities()
 end
 
--- Process a single combat interaction
+-- Process a single combat interaction (for ranged/special enemies only)
 function CombatSystem._processCombat(attackerEntityId, combat, attackerModel, currentTime)
-	-- Skip melee enemies - they are handled by MeleeChaseHandler
-	local enemyType = EntityManager.getComponent(attackerEntityId, "EnemyType")
-	if enemyType and enemyType.enemyType == "melee" then
-		-- Melee enemies are handled by MeleeChaseHandler, so we skip them here
-		-- to avoid duplicate damage application
-		return
-	end
-	
 	-- Check attack cooldown (use per-enemy cooldown, fallback to global config)
 	local attackCooldown = combat.attackCooldown or CONFIG.ATTACK_COOLDOWN
 	if combat.lastAttackTime and (currentTime - combat.lastAttackTime) < attackCooldown then
-		-- Debug: Show when attacks are blocked by cooldown
-		local timeRemaining = attackCooldown - (currentTime - combat.lastAttackTime)
-		if math.random() < 0.05 then -- Only print 5% of the time to avoid spam
-			print("⏰ Entity", attackerEntityId, "attack on cooldown -", string.format("%.1f", timeRemaining), "seconds remaining")
-		end
 		return
 	end
-	
-	print("🗡️ Entity", attackerEntityId, "ATTEMPTING ATTACK on target", combat.target)
 	
 	-- Get target entity
 	local target = combat.target
@@ -150,21 +135,18 @@ function CombatSystem._processCombat(attackerEntityId, combat, attackerModel, cu
 			isPlayer = true
 			playerHealth = {current = humanoid.Health, max = humanoid.MaxHealth}
 			targetModel = {part = target:FindFirstChild("HumanoidRootPart")}
-			print("🎯 Player target detected - Character:", target.Name, "Health:", humanoid.Health)
+			
 			-- Check if player has Dead tag, if so, remove Combat and skip
 			local player = game.Players:GetPlayerFromCharacter(target)
 			if player then
 				local CollectionService = game:GetService("CollectionService")
-				print("[CombatSystem] Checking Dead tag for player:", player.Name, CollectionService:HasTag(player, "Dead"))
 				if CollectionService:HasTag(player, "Dead") then
-					print("[CombatSystem] Target player is dead, removing Combat for entity", attackerEntityId)
 					EntityManager.removeComponent(attackerEntityId, "Combat")
 					return
 				end
 			end
 		else
 			-- Not a valid player target
-			print("⚠️ Invalid player target (no humanoid), removing Combat for entity", attackerEntityId)
 			EntityManager.removeComponent(attackerEntityId, "Combat")
 			return
 		end
@@ -173,7 +155,6 @@ function CombatSystem._processCombat(attackerEntityId, combat, attackerModel, cu
 	-- More lenient validation - don't remove combat component as aggressively
 	if not isPlayer and not targetHealth then
 		-- For entity targets, only remove if entity no longer exists
-		print("⚠️ Entity target lost Health component, removing Combat for entity", attackerEntityId)
 		EntityManager.removeComponent(attackerEntityId, "Combat")
 		return
 	end
@@ -181,10 +162,8 @@ function CombatSystem._processCombat(attackerEntityId, combat, attackerModel, cu
 	if not targetModel or not targetModel.part then
 		-- Target lost model/part, but don't remove combat immediately for players
 		if isPlayer then
-			print("⏳ Player target has no model/part yet, keeping Combat component")
 			return
 		else
-			print("❌ Entity target lost model/part, removing Combat for entity", attackerEntityId)
 			EntityManager.removeComponent(attackerEntityId, "Combat")
 			return
 		end
@@ -202,11 +181,8 @@ function CombatSystem._processCombat(attackerEntityId, combat, attackerModel, cu
 	local maxAttackDistance = combat.attackRange or CONFIG.MAX_COMBAT_DISTANCE
 	
 	if distance > maxAttackDistance then
-		print("❌ Entity", attackerEntityId, "TOO FAR to attack:", math.floor(distance), "vs max", maxAttackDistance)
 		return -- Too far to attack
 	end
-	
-	print("✅ Entity", attackerEntityId, "WITHIN RANGE to attack - distance:", math.floor(distance))
 	
 	-- Check invincibility
 	if invincibilityTimers[target] and currentTime < invincibilityTimers[target] then
@@ -222,7 +198,7 @@ function CombatSystem._processCombat(attackerEntityId, combat, attackerModel, cu
 		if humanoid then
 			-- Import DamageSystem here to avoid circular dependencies
 			local DamageSystem = require(script.Parent.Parent.Systems.DamageSystem)
-			DamageSystem:ApplyDamage(humanoid, damage, nil, "EnemyMeleeAttack")
+			DamageSystem:ApplyDamage(humanoid, damage, nil, "EnemyRangedAttack")
 		end
 	else
 		-- Apply damage to enemy using Humanoid.Health directly
@@ -231,8 +207,6 @@ function CombatSystem._processCombat(attackerEntityId, combat, attackerModel, cu
 			humanoid.Health = math.max(0, humanoid.Health - damage)
 		end
 	end
-	
-	print("🎯 ATTACK EXECUTED! Entity", attackerEntityId, "attacked", target.Name, "(damage:", damage, ")")
 	
 	-- Set invincibility
 	invincibilityTimers[target] = currentTime + CONFIG.INVINCIBILITY_TIME
@@ -244,34 +218,6 @@ function CombatSystem._processCombat(attackerEntityId, combat, attackerModel, cu
 	-- Create visual effects
 	CombatSystem._createDamageEffect(targetPosition, damage)
 	CombatSystem._createHitEffect(targetModel)
-	
-	-- Check if target died
-	if isPlayer then
-		local humanoid = target:FindFirstChildOfClass("Humanoid")
-		if humanoid and humanoid.Health <= 0 then
-			print("💀 Player", target.Name, "defeated by entity", attackerEntityId)
-		end
-	else
-		-- For enemies, let the Humanoid.Died event handle death/ragdoll
-		local humanoid = target:FindFirstChildOfClass("Humanoid")
-		if humanoid and humanoid.Health <= 0 then
-			print("💀 Enemy", target.Name, "defeated by entity", attackerEntityId)
-			-- Let ModelCreationSystem handle ragdoll via Humanoid.Died event
-		end
-	end
-end
-
--- Simple health regeneration (removed for enemies - they use Humanoid.Health)
-function CombatSystem._processHealthRegen(currentTime)
-	-- Health regeneration removed for enemies
-	-- Enemies now use Humanoid.Health directly, no custom Health component needed
-end
-
--- Remove dead entities (only for players now, enemies handled by Humanoid.Died)
-function CombatSystem._removeDeadEntities()
-	-- This function is now only for cleanup, not entity removal
-	-- Enemies are handled by ModelCreationSystem ragdoll system
-	-- Players are handled by PlayerRagdollSystem
 end
 
 -- Clean up when entity is destroyed (called by external systems)
@@ -363,21 +309,6 @@ function CombatSystem._createHitEffect(model)
 			model.part.Color = originalColor
 		end
 	end)
-end
-
--- Create death effect
-function CombatSystem._createDeathEffect(model)
-	if not model or not model.part then
-		return
-	end
-	
-	-- Fade out the model
-	local tween = TweenService:Create(model.part,
-		TweenInfo.new(1, Enum.EasingStyle.Quart, Enum.EasingDirection.Out),
-		{Transparency = 1}
-	)
-	
-	tween:Play()
 end
 
 return CombatSystem 

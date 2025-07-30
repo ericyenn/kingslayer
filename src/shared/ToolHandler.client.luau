@@ -14,6 +14,7 @@ print("DEBUG: ToolHandler script starting for tool:", Tool.Name)
 -- Shared Modules
 local ItemDefinitions = require(ReplicatedStorage.Shared.ItemDefinitions)
 local Categories = require(ReplicatedStorage.Shared.ItemCategory)
+local HitboxSystem = require(ReplicatedStorage.Shared.HitboxSystem)
 
 -- Client Systems - Access through StarterPlayerScripts
 local player = Players.LocalPlayer
@@ -69,7 +70,7 @@ local SHAPE_CAST_CONFIG = {
 
 print("DEBUG: ToolHandler modules loaded, setting up functions...")
 
-local function createVisualShapeCast(centerPosition, radius, color, hasHit)
+local function createVisualShapeCast(centerPosition, radius, color, hasHit, orientation)
     -- Create the main detection area visualization
     local shapePart = Instance.new("Part")
     shapePart.Name = "DebugShapeCast"
@@ -80,7 +81,7 @@ local function createVisualShapeCast(centerPosition, radius, color, hasHit)
     shapePart.BrickColor = BrickColor.new(color)
     shapePart.Transparency = 0.7
     shapePart.Size = radius
-    shapePart.CFrame = CFrame.new(centerPosition)
+    shapePart.CFrame = CFrame.new(centerPosition) * (orientation or CFrame.new())
     shapePart.Parent = workspace
     
     -- Create center indicator (smaller cube in the middle)
@@ -94,7 +95,7 @@ local function createVisualShapeCast(centerPosition, radius, color, hasHit)
     centerPart.BrickColor = BrickColor.new(centerColor)
     centerPart.Transparency = 0.3
     centerPart.Size = Vector3.new(1, 1, 1) -- Small center square
-    centerPart.CFrame = CFrame.new(centerPosition)
+    centerPart.CFrame = CFrame.new(centerPosition) * (orientation or CFrame.new())
     centerPart.Parent = workspace
     
     -- Remove after configured duration
@@ -104,45 +105,18 @@ local function createVisualShapeCast(centerPosition, radius, color, hasHit)
     return shapePart, centerPart
 end
 
-local function performShapeCast(character, centerPosition, radius)
-    -- Use GetPartBoundsInBox for shape casting detection
-    -- Create CFrame oriented to face the same direction as the player
+local function performHitboxDetection(character, centerPosition, radius)
+    -- Use the new HitboxSystem for detection
+    local filters = {
+        ignoreFloor = SHAPE_CAST_CONFIG.ignoreFloor
+    }
+    
+    -- Get player's facing direction for proper hitbox orientation
     local cameraDirection = camera.CFrame.LookVector
     local playerForward = Vector3.new(cameraDirection.X, 0, cameraDirection.Z).Unit -- Keep horizontal only
-    local orientedCFrame = CFrame.new(centerPosition, centerPosition + playerForward)
-    local partBounds = workspace:GetPartBoundsInBox(orientedCFrame, radius)
-    local detectedParts = {}
+    local orientation = CFrame.Angles(0, math.atan2(playerForward.X, playerForward.Z), 0)
     
-    -- Filter out unwanted parts
-    for _, part in ipairs(partBounds) do
-        -- Skip character parts
-        if part.Parent ~= character and not part:IsDescendantOf(character) then
-            -- Skip debug visualization parts (our own hitboxes)
-            local isDebugPart = part.Name:find("DebugShapeCast") or 
-                               part.Name:find("DebugHitbox") or 
-                               part.Name:find("DebugRay")
-            
-            if not isDebugPart then
-                -- Skip floor/ground if configured
-                if SHAPE_CAST_CONFIG.ignoreFloor then
-                    -- Check if part is likely floor (low Y position, large size, or named like ground)
-                    local isFloor = part.Name:lower():find("floor") or 
-                                   part.Name:lower():find("ground") or 
-                                   part.Name:lower():find("baseplate") or
-                                   part.Name:lower():find("spawn") or
-                                   (part.Size.X > 50 and part.Size.Z > 50 and part.Position.Y < centerPosition.Y - 2)
-                    
-                    if not isFloor then
-                        table.insert(detectedParts, part)
-                    end
-                else
-                    table.insert(detectedParts, part)
-                end
-            end
-        end
-    end
-    
-    return detectedParts
+    return HitboxSystem.performDetection(character, centerPosition, radius, filters, orientation)
 end
 
 -- Helper function to check if a part can take damage
@@ -172,15 +146,7 @@ end
 
 -- Helper function to find the best damage target from detected parts
 local function findBestDamageTarget(detectedParts)
-    -- Prioritize parts that can take damage
-    for _, part in ipairs(detectedParts) do
-        if canPartTakeDamage(part) then
-            return part
-        end
-    end
-    
-    -- If no damageable targets, return the first part (for other interactions)
-    return detectedParts[1]
+    return HitboxSystem.findBestDamageTarget(detectedParts)
 end
 
 -- Forward declaration for charge functions
@@ -485,19 +451,22 @@ onUse = function(attackType)
     -- Initialize target as nil
     local target = nil
 
-    -- Only perform shape cast for Tool category items
+    -- Only perform hitbox detection for Tool category items
     if itemDef.category == Categories.Tool then
         
         -- Play swing animation for tools
         playSwingAnimation()
         
-        -- Perform shape cast in front of player
+        -- Get item-specific hitbox settings
+        local itemSettings = HitboxSystem.getItemSettings(itemDef.name)
+        
+        -- Perform hitbox detection in front of player
         local character = player.Character
         local rootPart = character and character:FindFirstChild("HumanoidRootPart")
         local head = character and character:FindFirstChild("Head")
         
         if not rootPart then
-            print("ToolHandler: No HumanoidRootPart found, skipping shapecast")
+            print("ToolHandler: No HumanoidRootPart found, skipping hitbox detection")
             return
         end
         
@@ -505,11 +474,11 @@ onUse = function(attackType)
         local cameraDirection = camera.CFrame.LookVector
         local playerForward = Vector3.new(cameraDirection.X, 0, cameraDirection.Z).Unit -- Keep horizontal only
         
-        -- Calculate shape cast center position (1 stud in front of player)
-        local shapeCastCenter = rootPart.Position + playerForward * SHAPE_CAST_CONFIG.distance
+        -- Calculate hitbox center position using item-specific distance
+        local hitboxCenter = rootPart.Position + playerForward * itemSettings.distance
         
-        -- Perform the shape cast
-        local detectedParts = performShapeCast(character, shapeCastCenter, SHAPE_CAST_CONFIG.radius)
+        -- Perform the hitbox detection with item-specific size
+        local detectedParts = performHitboxDetection(character, hitboxCenter, itemSettings.size)
         
         local hasHit = #detectedParts > 0
         
@@ -517,11 +486,17 @@ onUse = function(attackType)
             -- Use the best damage target from detected parts
             target = findBestDamageTarget(detectedParts)
             
-            -- Create visual shape cast (green for hit)
-            createVisualShapeCast(shapeCastCenter, SHAPE_CAST_CONFIG.radius, "Bright green", true)
+            -- Create visual hitbox (green for hit) with proper orientation
+            local cameraDirection = camera.CFrame.LookVector
+            local playerForward = Vector3.new(cameraDirection.X, 0, cameraDirection.Z).Unit
+            local orientation = CFrame.Angles(0, math.atan2(playerForward.X, playerForward.Z), 0)
+            createVisualShapeCast(hitboxCenter, itemSettings.size, "Bright green", true, orientation)
         else
-            -- Create visual shape cast (red for miss)
-            createVisualShapeCast(shapeCastCenter, SHAPE_CAST_CONFIG.radius, "Bright red", false)
+            -- Create visual hitbox (red for miss) with proper orientation
+            local cameraDirection = camera.CFrame.LookVector
+            local playerForward = Vector3.new(cameraDirection.X, 0, cameraDirection.Z).Unit
+            local orientation = CFrame.Angles(0, math.atan2(playerForward.X, playerForward.Z), 0)
+            createVisualShapeCast(hitboxCenter, itemSettings.size, "Bright red", false, orientation)
         end
     end
 

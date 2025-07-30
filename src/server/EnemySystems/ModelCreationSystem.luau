@@ -38,8 +38,7 @@ local CONFIG = {
 local lastUpdate = 0
 local modelParent = nil
 
--- Animation state storage by model (like princess system)
-local enemyAnimations = {} -- {[model] = {animState}}
+-- Animation system removed - no longer needed
 
 -- Initialize system
 function ModelCreationSystem.initialize()
@@ -53,8 +52,7 @@ function ModelCreationSystem.initialize()
 		modelParent.Parent = Workspace
 	end
 	
-	-- Clear animation state on restart
-	enemyAnimations = {}
+	-- Animation system removed - no longer needed
 	
 	print("✅ ModelCreationSystem: Initialized successfully")
 	return true
@@ -153,8 +151,7 @@ function ModelCreationSystem._createModelForEntity(entityId)
     -- Apply enemy-specific speed to humanoid
     ModelCreationSystem._applyEnemyStatsToHumanoid(entityId, model)
 
-    -- Load animations for the enemy
-    ModelCreationSystem._loadAnimationsForEntity(entityId, model)
+    -- Animation system removed - no longer needed
 
     -- Ragdoll system: connect Humanoid.Died event for all enemies
     local humanoid = model:FindFirstChildOfClass("Humanoid")
@@ -175,6 +172,15 @@ function ModelCreationSystem._createModelForEntity(entityId)
     end
 
     print("🎨 Created model '" .. modelName .. "' for", enemyType.enemyId, "entity", entityId, "at", groundPosition)
+    
+    -- Notify clients to set up animations for this enemy
+    local RemoteEvents = require(ReplicatedStorage.Shared.RemoteEvents)
+    if RemoteEvents.SetupEnemyAnimations then
+        RemoteEvents.SetupEnemyAnimations:FireAllClients(model, entityId)
+        print("🎭 Notified clients to set up animations for enemy:", model.Name, "entity ID:", entityId)
+    else
+        print("⚠️ SetupEnemyAnimations RemoteEvent not found")
+    end
 	end
 end
 
@@ -302,14 +308,8 @@ end
 
 -- Clean up when entity is destroyed
 function ModelCreationSystem.cleanup(entityId)
-	-- Clean up animation state by finding the model
-	local model = EntityManager.getComponent(entityId, "Model")
-	if model and model.model and enemyAnimations[model.model] then
-		enemyAnimations[model.model] = nil
-		print("🧹 Cleaned up animation state for entity", entityId)
-	end
-	
 	-- Check if the enemy is dead (ragdolled) - if so, preserve the model
+	local model = EntityManager.getComponent(entityId, "Model")
 	if model and model.model and model.model.Parent then
 		local humanoid = model.model:FindFirstChildOfClass("Humanoid")
 		if humanoid and humanoid.Health <= 0 then
@@ -325,140 +325,9 @@ function ModelCreationSystem.cleanup(entityId)
 	end
 end
 
--- Load animations for an entity's model
-function ModelCreationSystem._loadAnimationsForEntity(entityId, model)
-	local humanoid = model:FindFirstChildOfClass("Humanoid")
-	if not humanoid then
-		warn("⚠️ No humanoid found for entity " .. entityId .. ", skipping animations")
-		return
-	end
-	
-	-- Animation IDs
-	local ANIMATION_IDS = {
-		idle = "rbxassetid://90478240073535",
-		walk = "rbxassetid://180426354",  -- Default R6 walk animation
-		attack = "rbxassetid://136814345857964",
-		aim = "rbxassetid://135648359564667"  -- Aiming animation for ranged enemies
-	}
-	
-	local animationSet = Components.create("AnimationSet", {})
-	
-	-- Load idle animation
-	if ANIMATION_IDS.idle then
-		local idleAnimation = Instance.new("Animation")
-		idleAnimation.AnimationId = ANIMATION_IDS.idle
-		animationSet.idle = humanoid:LoadAnimation(idleAnimation)
-	end
-	
-	-- Load walk animation
-	if ANIMATION_IDS.walk then
-		local walkAnimation = Instance.new("Animation")
-		walkAnimation.AnimationId = ANIMATION_IDS.walk
-		animationSet.walk = humanoid:LoadAnimation(walkAnimation)
-	end
-	
-	-- Load attack animation
-	if ANIMATION_IDS.attack then
-		local attackAnimation = Instance.new("Animation")
-		attackAnimation.AnimationId = ANIMATION_IDS.attack
-		animationSet.attack = humanoid:LoadAnimation(attackAnimation)
-	end
-	
-	-- Load aim animation
-	if ANIMATION_IDS.aim then
-		local aimAnimation = Instance.new("Animation")
-		aimAnimation.AnimationId = ANIMATION_IDS.aim
-		animationSet.aim = humanoid:LoadAnimation(aimAnimation)
-	end
-	
-	-- Set up movement detection for real-time animation sync
-	ModelCreationSystem._setupMovementDetection(entityId, humanoid, animationSet)
-	
-	-- Add AnimationSet component to entity
-	EntityManager.addComponent(entityId, "AnimationSet", animationSet)
-	
-	print("🎬 Loaded animations for entity", entityId)
-end
+-- Animation system removed - no longer needed
 
--- Set up movement detection for real-time animation synchronization
-function ModelCreationSystem._setupMovementDetection(entityId, humanoid, animationSet)
-	local model = EntityManager.getComponent(entityId, "Model")
-	if not model or not model.model then
-		return
-	end
-	
-	-- Store animation state by model (like princess system)
-	local animState = {
-		isMoving = false,
-		entityId = entityId
-	}
-	enemyAnimations[model.model] = animState
-	
-	-- Simple movement detection exactly like princess
-	humanoid.Running:Connect(function(speed)
-		if speed > 0.1 and not animState.isMoving then
-			-- Started moving - play walk animation
-			animState.isMoving = true
-			ModelCreationSystem._playEnemyAnimation(model.model, "walk")
-		elseif speed <= 0.1 and animState.isMoving then
-			-- Stopped moving - DON'T play idle, let AI system handle it
-			animState.isMoving = false
-			-- Just stop the current animation if it's movement-driven
-			local animationSet = EntityManager.getComponent(animState.entityId, "AnimationSet")
-			if animationSet and animationSet.animationSource == "movement" and animationSet.current then
-				animationSet.current:Stop()
-				animationSet.current = nil
-				animationSet.animationSource = "state"
-				EntityManager.addComponent(animState.entityId, "AnimationSet", animationSet)
-				print("🎭 Entity", animState.entityId, "stopped movement animation - AI will take over")
-			end
-		end
-	end)
-	
-	print("🎯 Set up movement detection for entity", entityId, "- Princess-style system")
-end
-
--- Play animation for an enemy (like princess system)
-function ModelCreationSystem._playEnemyAnimation(model, animName)
-	local animState = enemyAnimations[model]
-	if not animState then
-		return
-	end
-	
-	-- Get current animation set from entity
-	local animationSet = EntityManager.getComponent(animState.entityId, "AnimationSet")
-	if not animationSet then
-		return
-	end
-	
-	-- Stop current animation
-	if animationSet.current then
-		animationSet.current:Stop()
-	end
-	
-	-- Play new animation
-	local newAnimation = animationSet[animName]
-	if newAnimation then
-		newAnimation:Play()
-		animationSet.current = newAnimation
-		animationSet.animationSource = "movement"
-		
-		-- Update component
-		EntityManager.addComponent(animState.entityId, "AnimationSet", animationSet)
-		
-		print("🎭 Entity", animState.entityId, "playing", animName, "animation (movement-driven)")
-	end
-end
-
--- Public function to play animation for an entity (used by other systems)
-function ModelCreationSystem.playAnimationForEntity(entityId, animName)
-	local model = EntityManager.getComponent(entityId, "Model")
-	if not model or not model.model then
-		return
-	end
-	
-	ModelCreationSystem._playEnemyAnimation(model.model, animName)
-end
+-- Animation system removed - no longer needed
 
 -- Add ragdoll logic for all enemies
 local CollectionService = game:GetService("CollectionService")
@@ -500,7 +369,6 @@ function onDeathOfTheEnemy(enemy)
         EntityManager.removeComponent(entityId, "EnemyType")
         EntityManager.removeComponent(entityId, "CombatStats")
         EntityManager.removeComponent(entityId, "EnemyChat")
-        EntityManager.removeComponent(entityId, "AnimationSet")
         
         -- Remove the Model component but keep the actual model in workspace for ragdoll
         EntityManager.removeComponent(entityId, "Model")
@@ -522,7 +390,7 @@ function onDeathOfTheEnemy(enemy)
     for _, part in ipairs(enemy:GetChildren()) do
         if part:IsA("BasePart") and (part.Name:find("Arm") or part.Name:find("Leg") or part.Name == "Torso" or part.Name == "Head") then
             part.CanCollide = true
-            PhysicsService:SetPartCollisionGroup(part, "Ragdolls")
+            part.CollisionGroup = "Ragdolls"
         end
     end
     
@@ -530,7 +398,7 @@ function onDeathOfTheEnemy(enemy)
     local humanoidRootPart = enemy:FindFirstChild("HumanoidRootPart")
     if humanoidRootPart then
         humanoidRootPart.CanCollide = false
-        PhysicsService:SetPartCollisionGroup(humanoidRootPart, "Default")
+        humanoidRootPart.CollisionGroup = "Default"
     end
     
     -- Replace Motor6Ds with BallSocketConstraints (except Neck)

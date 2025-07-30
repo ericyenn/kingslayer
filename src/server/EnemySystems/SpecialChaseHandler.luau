@@ -77,49 +77,19 @@ function SpecialChaseHandler.handleChase(entityId, enemyAI, model, closestPlayer
     local inAttackRange = distance <= attackRange
     if inAttackRange then
         SpecialChaseHandler._handleContinuousAttack(entityId, closestPlayer, currentTime)
-        SpecialChaseHandler._playSpecialAttackAnimation(entityId, model)
+        -- Animation system removed - no longer needed
     end
     
     -- === MOVEMENT LOGIC (enhanced movement) ===
     local STOPPING_ZONE = attackRange * 0.9  -- Get close for special attacks
     local SLOW_ZONE = attackRange * 2.5      -- Larger slow zone
     
-    -- Very responsive player tracking
-    local lastKnownPlayerPos = entityLastPlayerPositions[entityId]
-    local currentPlayerPos = closestPlayer.position
-    local shouldUpdateMoveTo = false
-
-    if not lastKnownPlayerPos then
-        shouldUpdateMoveTo = true
-    else
-        local playerMovedDistance = (currentPlayerPos - lastKnownPlayerPos).Magnitude
-        local moveThreshold = CONFIG.PLAYER_MOVE_THRESHOLD * SPECIAL_CONFIG.MOVE_THRESHOLD_MULTIPLIER
-        if playerMovedDistance > moveThreshold then
-            shouldUpdateMoveTo = true
-        end
-    end
-
-    -- Basic stuck detection
-    local lastMoveToTime = enemyAI.lastMoveToTime or 0
-    if not shouldUpdateMoveTo and (currentTime - lastMoveToTime) > CONFIG.STUCK_TIMEOUT then
-        shouldUpdateMoveTo = true
-    end
-
-    -- Movement behavior
-    if distance <= STOPPING_ZONE then
-        -- Close enough for special attacks
-        if inAttackRange then
-            print("✨ Special enemy", entityId, "in optimal special attack position")
-        end
-    elseif shouldUpdateMoveTo then
-        -- Enhanced movement for special enemies
-        SpecialChaseHandler._moveToPlayerEnhanced(entityId, closestPlayer, distance, SLOW_ZONE, enemyAI, CONFIG)
-        entityLastPlayerPositions[entityId] = currentPlayerPos
-        enemyAI.lastMoveToTime = currentTime
-        
-        if inAttackRange then
-            print("🏃‍♂️✨ Special enemy", entityId, "using special attacks while moving")
-        end
+    -- Movement is now handled by MovementSystem
+    -- No need to track movement here - MovementSystem handles all movement execution
+    -- Special abilities and attack logic are handled here
+    
+    if inAttackRange then
+        print("✨ Special enemy", entityId, "in optimal special attack position")
     end
     
     return "chase"
@@ -203,51 +173,14 @@ function SpecialChaseHandler._handleContinuousAttack(entityId, closestPlayer, cu
     end
 end
 
--- Play special attack animation
-function SpecialChaseHandler._playSpecialAttackAnimation(entityId, model)
-    local animationSet = EntityManager.getComponent(entityId, "AnimationSet")
-    if not animationSet or not model.humanoid then
-        return
-    end
-    
-    -- Play attack animation with special effects
-    if animationSet.attack and not animationSet.attack.IsPlaying then
-        animationSet.attack.Priority = Enum.AnimationPriority.Action
-        animationSet.attack:Play()
-        print("✨ Playing special attack animation for entity", entityId)
-    end
-end
+-- Animation system removed - no longer needed
 
--- Enhanced movement for special enemies
+-- Movement is now handled by MovementSystem
+-- This function is kept for compatibility but movement logic is delegated
 function SpecialChaseHandler._moveToPlayerEnhanced(entityId, playerData, currentDistance, slowZoneDistance, enemyAI, CONFIG)
-    local model = EntityManager.getComponent(entityId, "Model")
-    if not model or not model.humanoid or not model.humanoid.Parent then
-        return
-    end
-    
-    if playerData.player.Character and playerData.player.Character:FindFirstChild("HumanoidRootPart") then
-        local humanoid = model.humanoid
-        local targetPosition = playerData.player.Character.HumanoidRootPart.Position
-        
-        -- Enhanced speed for special enemies
-        local baseSpeed = enemyAI.speed or humanoid.WalkSpeed or 16
-        local newSpeed = baseSpeed * 1.2  -- 20% faster than normal
-        
-        if currentDistance <= slowZoneDistance then
-            -- Smooth approach but maintain higher speed
-            local slowFactor = math.max(0.6, currentDistance / slowZoneDistance)  -- Don't slow down as much
-            newSpeed = newSpeed * slowFactor
-            print("✨ Special entity", entityId, "in enhanced approach - speed:", math.floor(newSpeed))
-        end
-        
-        -- Apply enhanced speed
-        humanoid.WalkSpeed = newSpeed
-        
-        -- Move to target
-        humanoid:MoveTo(targetPosition)
-        
-        print("🎯 Special entity", entityId, "moving with enhanced speed", newSpeed, "distance:", math.floor(currentDistance))
-    end
+    -- Movement is now handled by MovementSystem
+    -- This function is kept for compatibility but does nothing
+    -- The actual movement happens in MovementSystem.update()
 end
 
 -- Clean up special enemy state when entity is destroyed

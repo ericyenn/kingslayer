@@ -178,13 +178,7 @@ function RangedChaseHandler._handleAiming(entityId, enemyAI, model, closestPlaye
     local enemyConfig = getEnemyRangedConfig(entityId)
     local aimDuration = currentTime - rangedState.aimStartTime
     
-    -- Play aiming animation when starting to aim (only once)
-    -- This triggers when ranged enemies transition from positioning to aiming phase
-    if aimDuration < 0.1 then  -- Just started aiming
-        local ModelCreationSystem = require(script.Parent.ModelCreationSystem)
-        ModelCreationSystem.playAnimationForEntity(entityId, "aim")
-        print("🎯 Ranged enemy", entityId, "started aiming animation")
-    end
+    -- Animation system removed - no longer needed
     
     if aimDuration >= enemyConfig.AIM_TIME then
         -- Aiming complete - transition to shooting
@@ -195,11 +189,8 @@ function RangedChaseHandler._handleAiming(entityId, enemyAI, model, closestPlaye
         return "chase"
     end
     
-    -- Stop movement during aiming - just face the target
-    if model.humanoid then
-        -- Stop any current movement
-        model.humanoid:MoveTo(model.part.Position)
-    end
+    -- Movement is handled by MovementSystem - no need to stop movement here
+    -- MovementSystem will handle stopping movement when appropriate
     
     -- Rotate to face player during aiming
     EnemyRotationUtility.rotateForAttackInstant(entityId, closestPlayer)
@@ -212,25 +203,13 @@ end
 function RangedChaseHandler._handleShooting(entityId, enemyAI, model, closestPlayer, distance, currentTime, rangedState)
     local enemyConfig = getEnemyRangedConfig(entityId)
     
-    -- Stop movement during shooting
-    if model.humanoid then
-        model.humanoid:MoveTo(model.part.Position)
-    end
+    -- Movement is handled by MovementSystem - no need to stop movement here
+    -- MovementSystem will handle stopping movement when appropriate
     
     -- Rotate to face player during shooting
     EnemyRotationUtility.rotateForAttackInstant(entityId, closestPlayer)
     
-    -- Get the animation track from the aiming phase and pause it at the last frame
-    if rangedState.burstCount == 0 and not rangedState.firingAnimationTrack then
-        local animationSet = EntityManager.getComponent(entityId, "AnimationSet")
-        if animationSet and animationSet.aim then
-            rangedState.firingAnimationTrack = animationSet.aim
-            
-            -- Pause the animation at the last frame immediately when shooting starts
-            rangedState.firingAnimationTrack:AdjustSpeed(0)
-            print("🎭 Ranged enemy", entityId, "paused aiming animation at last frame for firing")
-        end
-    end
+    -- Animation system removed - no longer needed
     
     -- Check if we should fire next shot
     local timeSinceLastShot = currentTime - rangedState.lastShotTime
@@ -245,17 +224,11 @@ function RangedChaseHandler._handleShooting(entityId, enemyAI, model, closestPla
     
     -- Check if burst is complete
     if rangedState.burstCount >= enemyConfig.BURST_SIZE then
-        -- Resume the animation after burst is complete
-        if rangedState.firingAnimationTrack then
-            -- Resume normal speed immediately
-            rangedState.firingAnimationTrack:AdjustSpeed(1)
-            print("🎭 Ranged enemy", entityId, "resumed animation after burst")
-        end
+        -- Animation system removed - no longer needed
         
         -- Burst complete - transition to repositioning
         rangedState.phase = "repositioning"
         rangedState.repositionStartTime = currentTime
-        rangedState.firingAnimationTrack = nil  -- Clear the track reference
         print("✅ Ranged enemy", entityId, "burst complete - repositioning")
     end
     
@@ -268,10 +241,8 @@ function RangedChaseHandler._handleRepositioning(entityId, enemyAI, model, close
     local pauseDuration = currentTime - (rangedState.repositionStartTime or currentTime)
     local attackRange = enemyAI.attackRange or CONFIG.ATTACK_RANGE
     
-    -- Stop movement during repositioning pause
-    if model.humanoid then
-        model.humanoid:MoveTo(model.part.Position)
-    end
+    -- Movement is handled by MovementSystem - no need to stop movement here
+    -- MovementSystem will handle stopping movement when appropriate
     
     if pauseDuration >= enemyConfig.POST_BURST_PAUSE then
         -- Simple logic: if player is in range, shoot again; if not, move closer
@@ -291,23 +262,12 @@ function RangedChaseHandler._handleRepositioning(entityId, enemyAI, model, close
     return "chase"
 end
 
--- Move directly toward player (only when out of range)
+-- Movement is now handled by MovementSystem
+-- This function is kept for compatibility but movement logic is delegated
 function RangedChaseHandler._moveToPlayer(entityId, playerData, enemyAI)
-    local model = EntityManager.getComponent(entityId, "Model")
-    if not model or not model.humanoid or not model.humanoid.Parent then
-        return
-    end
-    
-    if playerData.player.Character and playerData.player.Character:FindFirstChild("HumanoidRootPart") then
-        local humanoid = model.humanoid
-        local playerPosition = playerData.player.Character.HumanoidRootPart.Position
-        
-        -- Move directly toward player
-        local baseSpeed = enemyAI.speed or 16
-        humanoid.WalkSpeed = baseSpeed * 0.8  -- Slightly slower for positioning
-        
-        humanoid:MoveTo(playerPosition)
-    end
+    -- Movement is now handled by MovementSystem
+    -- This function is kept for compatibility but does nothing
+    -- The actual movement happens in MovementSystem.update()
 end
 
 -- Fire a projectile at the target position
@@ -401,11 +361,6 @@ end
 
 -- Clean up ranged enemy state when entity is destroyed
 function RangedChaseHandler.cleanupEntity(entityId)
-    local rangedState = rangedEnemyStates[entityId]
-    if rangedState and rangedState.firingAnimationTrack then
-        -- Resume normal speed before cleanup
-        rangedState.firingAnimationTrack:AdjustSpeed(1)
-    end
     rangedEnemyStates[entityId] = nil
 end
 

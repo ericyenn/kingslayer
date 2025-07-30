@@ -72,7 +72,7 @@ end
 
 -- Import enemy systems (with error handling)
 local EnemySystems = script.Parent.EnemySystems
-local EnemySpawnSystem, EnemyAISystem, EnemyCombatSystem, EnemyModelSystem, EnemyChatSystem
+local EnemySpawnSystem, EnemyAISystem, EnemyCombatSystem, EnemyModelSystem, EnemyChatSystem, MovementSystem
 
 local success, result = pcall(function()
     return require(EnemySystems.EnemySpawnSystem)
@@ -124,12 +124,22 @@ else
     error("❌ Failed to load EnemyChatSystem: " .. tostring(result))
 end
 
+local success, result = pcall(function()
+    return require(EnemySystems.MovementSystem)
+end)
+if success then
+    MovementSystem = result
+    print("✅ MovementSystem loaded successfully")
+else
+    error("❌ Failed to load MovementSystem: " .. tostring(result))
+end
+
 -- Test enemy ECS core
 print("📦 Enemy ECS loaded: EntityManager, EnemySystemManager, EnemyComponents")
 
 -- Only register systems if all modules loaded successfully
 if EntityManager and EnemySystemManager and EnemyComponents and 
-   EnemySpawnSystem and EnemyAISystem and EnemyCombatSystem and EnemyModelSystem and EnemyChatSystem then
+   EnemySpawnSystem and EnemyAISystem and EnemyCombatSystem and EnemyModelSystem and EnemyChatSystem and MovementSystem then
    
     -- Register enemy systems
     EnemySystemManager.registerSystem(EnemySpawnSystem)
@@ -137,6 +147,7 @@ if EntityManager and EnemySystemManager and EnemyComponents and
     EnemySystemManager.registerSystem(EnemyCombatSystem)
     EnemySystemManager.registerSystem(EnemyModelSystem)
     EnemySystemManager.registerSystem(EnemyChatSystem)
+    EnemySystemManager.registerSystem(MovementSystem)
 
     -- Start enemy system game loop
     EnemySystemManager.startGameLoop()
@@ -169,6 +180,7 @@ return {
         EnemyAISystem,
         EnemyCombatSystem,
         EnemyModelSystem,
-        EnemyChatSystem
+        EnemyChatSystem,
+        MovementSystem
     }
 } 

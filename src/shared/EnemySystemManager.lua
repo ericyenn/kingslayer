@@ -12,6 +12,16 @@ function SystemManager.registerSystem(system)
     if system and system.update and type(system.update) == "function" then
         table.insert(SystemManager.systems, system)
         print("✅ Registered system:", system.name or "Unknown")
+        
+        -- Call initialize function if it exists
+        if system.initialize and type(system.initialize) == "function" then
+            local success, err = pcall(system.initialize)
+            if success then
+                print("✅ Initialized system:", system.name or "Unknown")
+            else
+                warn("❌ Failed to initialize system", system.name or "Unknown", ":", err)
+            end
+        end
     else
         warn("❌ Invalid system - must have an 'update' function")
     end

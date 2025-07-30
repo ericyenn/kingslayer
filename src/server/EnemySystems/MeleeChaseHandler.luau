@@ -21,6 +21,7 @@ if not Components then
 end
 
 local EntityManager = require(ReplicatedStorage.Shared.EntityManager)
+local HitboxSystem = require(ReplicatedStorage.Shared.HitboxSystem)
 
 -- Rotation utility removed for melee enemies (only ranged enemies rotate)
 
@@ -32,10 +33,7 @@ local attackUpdateConnection = nil
 -- Configuration specific to melee enemies
 local ATTACK_DURATION = 0.2 -- Duration of moving shapecast attack
 local MELEE_CONFIG = {
-    STOPPING_ZONE_MULTIPLIER = 0.8,    -- Stop at 80% of attack range
-    SLOW_ZONE_MULTIPLIER = 2.0,        -- Slow down at 2x attack range
     PERSISTENCE_MULTIPLIER = 1.5,      -- Chase until 1.5x detection range
-    MOVE_THRESHOLD_MULTIPLIER = 0.5,   -- More responsive movement (50% of normal threshold)
     ATTACK_WHILE_MOVING = true,        -- Can attack while moving
 }
 
@@ -93,49 +91,6 @@ function MeleeChaseHandler.handleChase(entityId, enemyAI, model, closestPlayer, 
         MeleeChaseHandler._handleContinuousAttack(entityId, closestPlayer, currentTime)
     end
     
-    -- === MOVEMENT LOGIC (independent of attacking) ===
-    -- Zone-based movement logic for smooth approach
-    local STOPPING_ZONE = attackRange * MELEE_CONFIG.STOPPING_ZONE_MULTIPLIER
-    local SLOW_ZONE = attackRange * MELEE_CONFIG.SLOW_ZONE_MULTIPLIER
-    
-    -- Continuous player tracking (melee enemies are more responsive)
-    local lastKnownPlayerPos = entityLastPlayerPositions[entityId]
-    local currentPlayerPos = closestPlayer.position
-    local shouldUpdateMoveTo = false
-
-    if not lastKnownPlayerPos then
-        shouldUpdateMoveTo = true
-    else
-        local playerMovedDistance = (currentPlayerPos - lastKnownPlayerPos).Magnitude
-        local moveThreshold = CONFIG.PLAYER_MOVE_THRESHOLD * MELEE_CONFIG.MOVE_THRESHOLD_MULTIPLIER
-        if playerMovedDistance > moveThreshold then
-            shouldUpdateMoveTo = true
-        end
-    end
-
-    -- Basic stuck detection
-    local lastMoveToTime = enemyAI.lastMoveToTime or 0
-    if not shouldUpdateMoveTo and (currentTime - lastMoveToTime) > CONFIG.STUCK_TIMEOUT then
-        shouldUpdateMoveTo = true
-    end
-
-    -- Movement behavior (happens regardless of attack state)
-    if distance <= STOPPING_ZONE then
-        -- Close enough - don't move closer, just attack if in range
-        if inAttackRange then
-            print("⚔️ Melee enemy", entityId, "in optimal attack position")
-        end
-    elseif shouldUpdateMoveTo then
-        -- Move toward player with zone-based speed adjustment
-        MeleeChaseHandler._moveToPlayerWithZones(entityId, closestPlayer, distance, SLOW_ZONE, enemyAI, CONFIG)
-        entityLastPlayerPositions[entityId] = currentPlayerPos
-        enemyAI.lastMoveToTime = currentTime
-        
-        if inAttackRange then
-            print("🏃‍♂️⚔️ Melee enemy", entityId, "attacking while moving toward player")
-        end
-    end
-    
     return "chase"  -- Continue chasing
 end
 
@@ -182,8 +137,7 @@ function MeleeChaseHandler._performShapecastAttack(entityId, closestPlayer, comb
         return
     end
     
-    -- Play attack animation
-    MeleeChaseHandler._playAttackAnimationOverlay(entityId, model)
+    -- Animation system removed - no longer needed
     
     -- Set up attack state for moving shapecast
     combat.isAttacking = true
@@ -196,51 +150,13 @@ function MeleeChaseHandler._performShapecastAttack(entityId, closestPlayer, comb
     print("⚔️ Melee enemy", entityId, "started moving shapecast attack on", closestPlayer.player.Name)
 end
 
--- Play attack animation overlay for melee attacks
-function MeleeChaseHandler._playAttackAnimationOverlay(entityId, model)
-    local animationSet = EntityManager.getComponent(entityId, "AnimationSet")
-    if not animationSet or not model.humanoid then
-        return
-    end
-    
-    -- Play attack animation as overlay (higher priority than movement)
-    if animationSet.attack and not animationSet.attack.IsPlaying then
-        animationSet.attack.Priority = Enum.AnimationPriority.Action
-        animationSet.attack:Play()
-        print("⚔️ Playing melee attack animation overlay for entity", entityId)
-    end
-end
+-- Animation system removed - no longer needed
 
--- Move enemy toward player with zone-based speed adjustment
+-- Movement is now handled by MovementSystem
+-- This function is kept for compatibility but does nothing
 function MeleeChaseHandler._moveToPlayerWithZones(entityId, playerData, currentDistance, slowZoneDistance, enemyAI, CONFIG)
-    local model = EntityManager.getComponent(entityId, "Model")
-    if not model or not model.humanoid or not model.humanoid.Parent then
-        return
-    end
-    
-    if playerData.player.Character and playerData.player.Character:FindFirstChild("HumanoidRootPart") then
-        local humanoid = model.humanoid
-        local targetPosition = playerData.player.Character.HumanoidRootPart.Position
-        
-        -- Zone-based speed adjustment for smoother movement
-        local baseSpeed = enemyAI.speed or humanoid.WalkSpeed or 16
-        local newSpeed = baseSpeed
-        
-        if currentDistance <= slowZoneDistance then
-            -- In slow zone: reduce speed for smoother approach
-            local slowFactor = math.max(0.4, currentDistance / slowZoneDistance)
-            newSpeed = baseSpeed * slowFactor
-            print("🐌 Melee entity", entityId, "in slow zone - speed:", math.floor(newSpeed))
-        end
-        
-        -- Apply speed adjustment
-        humanoid.WalkSpeed = newSpeed
-        
-        -- Move to target
-        humanoid:MoveTo(targetPosition)
-        
-        print("🎯 Melee entity", entityId, "moving to player at speed", newSpeed, "distance:", math.floor(currentDistance))
-    end
+    -- Movement is now handled by MovementSystem
+    -- This function is kept for compatibility but does nothing
 end
 
 -- Deal damage to player from shapecast
@@ -333,32 +249,35 @@ function MeleeChaseHandler._updateSingleAttack(entityId, combat, currentTime)
         return
     end
     
-    -- Perform moving shapecast at current enemy position
+    -- Perform moving hitbox detection at current enemy position
     local enemyPosition = model.part.Position
     local enemyLookVector = model.part.CFrame.LookVector
     
-    -- Shapecast configuration
-    local shapecastDistance = 1.0  -- 1 stud in front (closer for more precise combat)
-    local shapecastSize = Vector3.new(1.5, 1.5, 1.5)  -- 1.5x1.5x1.5 detection box
+    -- Get enemy-specific hitbox settings
+    local HitboxSystem = require(game:GetService("ReplicatedStorage").Shared.HitboxSystem)
+    local enemySettings = HitboxSystem.getEnemySettings("melee") -- Default to melee settings
     
-    -- Calculate current shapecast center position (moves with enemy)
-    local shapecastCenter = enemyPosition + enemyLookVector * shapecastDistance
+    -- Calculate current hitbox center position (moves with enemy)
+    local hitboxCenter = enemyPosition + enemyLookVector * enemySettings.distance
     
-    -- Perform the shapecast using GetPartBoundsInBox
-    -- Create CFrame oriented to face the same direction as the enemy
-    local enemyCFrame = model.part.CFrame
-    local orientedCFrame = CFrame.new(shapecastCenter, shapecastCenter + enemyCFrame.LookVector)
-    local detectedParts = workspace:GetPartBoundsInBox(orientedCFrame, shapecastSize)
+    -- Get target player
+    local targetPlayer = combat.attackTargetPlayer
+    
+    -- Perform the hitbox detection using HitboxSystem with proper orientation
+    local enemyOrientation = CFrame.Angles(0, math.atan2(enemyLookVector.X, enemyLookVector.Z), 0)
+    local detectedParts = HitboxSystem.performDetection(nil, hitboxCenter, enemySettings.size, {
+        ignoreFloor = true,
+        targetPlayer = targetPlayer
+    }, enemyOrientation)
     
     -- Check if we hit the target player
-    local targetPlayer = combat.attackTargetPlayer
     if targetPlayer and targetPlayer.Character then
         for _, part in ipairs(detectedParts) do
             -- Check if this part belongs to the target player
             if part:IsDescendantOf(targetPlayer.Character) then
                 -- Hit! Deal damage and end attack
                 MeleeChaseHandler._dealShapecastDamage(entityId, targetPlayer, combat.damage or 10)
-                MeleeChaseHandler._endAttack(entityId, combat, true, shapecastCenter, shapecastSize)
+                MeleeChaseHandler._endAttack(entityId, combat, true, hitboxCenter, enemySettings.size)
                 return
             end
         end
@@ -382,10 +301,11 @@ function MeleeChaseHandler._endAttack(entityId, combat, hit, centerPosition, siz
         if model and model.part then
             local enemyPosition = model.part.Position
             local enemyLookVector = model.part.CFrame.LookVector
-            local missCenter = enemyPosition + enemyLookVector * 1.0  -- Match the shapecast distance
-            MeleeChaseHandler._createAttackVisual(missCenter, Vector3.new(1.5, 1.5, 1.5), false)
+            local enemySettings = HitboxSystem.getEnemySettings("melee")
+            local missCenter = enemyPosition + enemyLookVector * enemySettings.distance
+            MeleeChaseHandler._createAttackVisual(missCenter, enemySettings.size, false)
         end
-        print("⚔️ Melee enemy", entityId, "MISSED with moving shapecast")
+        print("⚔️ Melee enemy", entityId, "MISSED with moving hitbox")
     end
     
     -- Update the combat component

@@ -169,7 +169,19 @@ local systemInitializationOrder = {
         maxRetries = 2
     },
     
+    -- Animation system (new)
+    {
+        name = "EnemyAnimationSystem",
+        module = require(script.Systems.EnemyAnimationSystem),
+        maxRetries = 2
+    },
+    
     -- UI components
+    {
+        name = "HealthBar",
+        module = require(script.UI.HealthBar),
+        maxRetries = 2
+    },
     {
         name = "Hotbar",
         module = require(script.UI.Hotbar),
