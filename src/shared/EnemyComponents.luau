@@ -11,11 +11,10 @@ Components.Health = {
 }
 
 Components.Combat = {
-    target = nil,           -- Entity ID being attacked
+    target = nil,           -- Target entity to attack
     damage = 10,           -- Damage per attack
     lastAttackTime = 0,    -- When last attack occurred
-    attackCooldown = 1,    -- Time between attacks
-    attackRange = 5        -- Attack range in studs
+    attackCooldown = 1     -- Time between attacks
 }
 
 Components.CombatStats = {
@@ -36,8 +35,6 @@ Components.EnemyType = {
 Components.EnemyAI = {
     state = "idle",         -- "idle", "patrol", "chase", "attack", "dead"
     stateStartTime = 0,
-    detectionRange = 3,    -- How far enemy can detect players (changed from 30 to 15)
-    attackRange = 5,
     speed = 16,
     homePosition = Vector3.new(0, 0, 0),
     patrolRadius = 30,      -- Maximum distance from homePosition during patrol

@@ -37,6 +37,7 @@ local CONFIG = {
 	ATTACK_COOLDOWN = 1.5, -- Seconds between attacks
 	INVINCIBILITY_TIME = 0.3, -- Invincibility after taking damage
 	MAX_COMBAT_DISTANCE = 8, -- Max distance for melee attacks
+	ATTACK_RANGE = 5, -- Global attack range for all enemies
 	
 	-- Visual effects
 	DAMAGE_TEXT_LIFETIME = 2,
@@ -177,8 +178,8 @@ function CombatSystem._processCombat(attackerEntityId, combat, attackerModel, cu
 	local targetPosition = targetModel.part.Position
 	local distance = (attackerPosition - targetPosition).Magnitude
 	
-	-- Use per-enemy attack range if available, fallback to config
-	local maxAttackDistance = combat.attackRange or CONFIG.MAX_COMBAT_DISTANCE
+	-- Use global attack range
+	local maxAttackDistance = CONFIG.ATTACK_RANGE
 	
 	if distance > maxAttackDistance then
 		return -- Too far to attack

@@ -20,7 +20,8 @@ end
 
 local EntityManager = require(ReplicatedStorage.Shared.EntityManager)
 
--- Rotation utility removed for special enemies (only ranged enemies rotate)
+-- Import MovementSystem for movement commands
+local MovementSystem = require(script.Parent.MovementSystem)
 
 local SpecialChaseHandler = {}
 
@@ -30,162 +31,128 @@ local SPECIAL_CONFIG = {
     MOVE_THRESHOLD_MULTIPLIER = 0.3,   -- Very responsive movement
     ABILITY_COOLDOWN = 5.0,            -- Seconds between special abilities
     TELEPORT_RANGE = 15,               -- Range for teleport abilities
+    STOP_DISTANCE = 1.5,               -- Stop moving when this close to player
+    SPEED_BOOST = 1.2,                 -- 20% speed boost for special enemies
 }
 
--- Store special enemy state data for abilities
-local specialEnemyStates = {}  -- {[entityId] = {lastAbilityTime, abilityPhase, ...}}
+-- Clean up special chase handler for an entity
+function SpecialChaseHandler.cleanup(entityId)
+    -- No state to clean up - handlers are stateless
+    print("🧹 SpecialChaseHandler: Cleaned up entity", entityId)
+end
 
--- Handle special enemy chase behavior
-function SpecialChaseHandler.handleChase(entityId, enemyAI, model, closestPlayer, distance, currentTime, entityLastPlayerPositions, CONFIG)
-    -- Get or create special state for this entity
-    local specialState = specialEnemyStates[entityId]
-    if not specialState then
-        specialState = {
-            lastAbilityTime = 0,
-            abilityPhase = "none"
-        }
-        specialEnemyStates[entityId] = specialState
+-- Handle special enemy chase behavior (SERVICE - no state changes)
+function SpecialChaseHandler.handleChase(entityId, enemyAI, model, closestPlayer, currentTime)
+    -- Validate inputs
+    if not closestPlayer or not closestPlayer.player then
+        return -- No valid target, but don't change state (AISystem handles that)
     end
     
     -- Get enemy-specific ranges
-    local attackRange = enemyAI.attackRange or CONFIG.ATTACK_RANGE
-    local detectionRange = enemyAI.detectionRange or CONFIG.DETECTION_RANGE
-    
-    -- Check if we should give up chase (special enemies are very persistent)
-    if not closestPlayer then
-        specialEnemyStates[entityId] = nil  -- Clean up state
-        return "idle"
+    local detectionRange = enemyAI.detectionRange
+    if not detectionRange then
+        warn("⚠️ No detectionRange defined for entity", entityId, "- cannot chase")
+        return
     end
     
+    -- Calculate distance to target
+    local currentPosition = model.part.Position
+    local targetPosition = closestPlayer.position
+    local distance = (currentPosition - targetPosition).Magnitude
+    
+    -- Check if we should give up chase (special enemies are very persistent)
     local maxChaseDistance = detectionRange * SPECIAL_CONFIG.PERSISTENCE_MULTIPLIER
     if distance > maxChaseDistance then
-        specialEnemyStates[entityId] = nil  -- Clean up state
-        return "idle"
+        return -- Target too far, but don't change state (AISystem handles that)
     end
     
     -- Check chase timeout
     local chaseTime = currentTime - (enemyAI.stateStartTime or currentTime)
-    if chaseTime >= CONFIG.CHASE_TIMEOUT then
-        specialEnemyStates[entityId] = nil  -- Clean up state
-        return "idle"
+    if chaseTime >= 10 then -- 10 second timeout
+        return -- Timeout, but don't change state (AISystem handles that)
     end
     
+    -- === MOVEMENT LOGIC (enhanced movement with speed boost) ===
+    local baseSpeed = enemyAI.speed or 16
+    local enhancedSpeed = baseSpeed * SPECIAL_CONFIG.SPEED_BOOST
+    
+    -- Use MovementSystem for enhanced movement toward player
+    MovementSystem.moveTowardPlayer(entityId, targetPosition, enhancedSpeed, SPECIAL_CONFIG.STOP_DISTANCE)
+    
     -- === SPECIAL ABILITIES LOGIC ===
-    SpecialChaseHandler._handleSpecialAbilities(entityId, enemyAI, model, closestPlayer, distance, currentTime, specialState)
+    SpecialChaseHandler._handleSpecialAbilities(entityId, enemyAI, model, closestPlayer, distance, currentTime)
     
     -- === ATTACK LOGIC (similar to melee but with special effects) ===
+    local attackRange = 5 -- Default attack range
     local inAttackRange = distance <= attackRange
     if inAttackRange then
         SpecialChaseHandler._handleContinuousAttack(entityId, closestPlayer, currentTime)
-        -- Animation system removed - no longer needed
-    end
-    
-    -- === MOVEMENT LOGIC (enhanced movement) ===
-    local STOPPING_ZONE = attackRange * 0.9  -- Get close for special attacks
-    local SLOW_ZONE = attackRange * 2.5      -- Larger slow zone
-    
-    -- Movement is now handled by MovementSystem
-    -- No need to track movement here - MovementSystem handles all movement execution
-    -- Special abilities and attack logic are handled here
-    
-    if inAttackRange then
-        print("✨ Special enemy", entityId, "in optimal special attack position")
-    end
-    
-    return "chase"
-end
-
--- Handle special abilities (placeholder for future expansion)
-function SpecialChaseHandler._handleSpecialAbilities(entityId, enemyAI, model, closestPlayer, distance, currentTime, specialState)
-    local timeSinceLastAbility = currentTime - specialState.lastAbilityTime
-    
-    if timeSinceLastAbility >= SPECIAL_CONFIG.ABILITY_COOLDOWN then
-        -- Example special ability: teleport closer if far away
-        if distance > 20 and distance < SPECIAL_CONFIG.TELEPORT_RANGE * 2 then
-            SpecialChaseHandler._attemptTeleport(entityId, model, closestPlayer, specialState, currentTime)
-        end
-        
-        -- Add more special abilities here in the future:
-        -- - Shadow clone
-        -- - Area damage
-        -- - Temporary invincibility
-        -- - Life drain
-        -- - Summon minions
     end
 end
 
--- Example special ability: teleport
-function SpecialChaseHandler._attemptTeleport(entityId, model, closestPlayer, specialState, currentTime)
-    if not model.part or not closestPlayer.player.Character then
-        return
-    end
-    
-    local playerPosition = closestPlayer.player.Character.HumanoidRootPart.Position
-    local currentPosition = model.part.Position
-    
-    -- Calculate teleport position (closer to player but not too close)
-    local direction = (playerPosition - currentPosition).Unit
-    local teleportPosition = playerPosition - (direction * SPECIAL_CONFIG.TELEPORT_RANGE)
-    
-    -- Teleport with visual effect
-    model.part.CFrame = CFrame.new(teleportPosition)
-    
-    -- Visual effect (simple for now)
-    local effect = Instance.new("Explosion")
-    effect.Position = currentPosition
-    effect.BlastRadius = 5
-    effect.BlastPressure = 0  -- No damage
-    effect.Parent = workspace
-    
-    local effect2 = Instance.new("Explosion")
-    effect2.Position = teleportPosition
-    effect2.BlastRadius = 5
-    effect2.BlastPressure = 0  -- No damage
-    effect2.Parent = workspace
-    
-    specialState.lastAbilityTime = currentTime
-    print("⚡ Special enemy", entityId, "teleported closer to player!")
+-- Handle special abilities (placeholder for future implementation)
+function SpecialChaseHandler._handleSpecialAbilities(entityId, enemyAI, model, closestPlayer, distance, currentTime)
+    -- Could implement special abilities here (teleport, area attacks, etc.)
+    -- For now, just a placeholder
+    print("✨ Special enemy", entityId, "ready for special ability")
 end
 
--- Handle continuous attacking with special effects
+-- Handle continuous attacking during chase (similar to melee but with special effects)
 function SpecialChaseHandler._handleContinuousAttack(entityId, closestPlayer, currentTime)
     local combat = EntityManager.getComponent(entityId, "Combat")
     if not combat then
-        -- Create special combat component
+        -- Create fallback combat component
         local enemyAI = EntityManager.getComponent(entityId, "EnemyAI")
-        local attackRange = enemyAI and enemyAI.attackRange or 5
-        
-        warn("⚠️ No Combat component found for special entity", entityId, "- creating enhanced one")
+        local enemyType = EntityManager.getComponent(entityId, "EnemyType")
+        local damage = (enemyType and enemyType.config and enemyType.config.damage) or 15 -- Higher damage for special enemies
+        local attackCooldown = (enemyType and enemyType.config and enemyType.config.attackSpeed) and (1 / enemyType.config.attackSpeed) or 1.2
         EntityManager.addComponent(entityId, "Combat", Components.create("Combat", {
-            target = closestPlayer.entity,
-            damage = 15,  -- Higher damage for special enemies
-            lastAttackTime = currentTime,
-            attackRange = attackRange
+            damage = damage,
+            attackCooldown = attackCooldown
         }))
-        print("✨ Created enhanced Combat component for special entity", entityId)
-    else
-        -- Update combat target if it changed
-        if combat.target ~= closestPlayer.entity then
-            combat.target = closestPlayer.entity
-            EntityManager.addComponent(entityId, "Combat", combat)
-            print("🎯 Updated Combat target for special entity", entityId, "to new target")
-        end
+        combat = EntityManager.getComponent(entityId, "Combat")
+    end
+    
+    -- Check attack cooldown
+    local timeSinceLastAttack = currentTime - (combat.lastAttackTime or 0)
+    local attackCooldown = combat.attackCooldown or 1.2
+    
+    if timeSinceLastAttack >= attackCooldown then
+        -- Perform special attack (could be enhanced version of melee attack)
+        SpecialChaseHandler._performSpecialAttack(entityId, closestPlayer, combat, currentTime)
+        
+        -- Update attack time
+        combat.lastAttackTime = currentTime
+        EntityManager.addComponent(entityId, "Combat", combat)
     end
 end
 
--- Animation system removed - no longer needed
-
--- Movement is now handled by MovementSystem
--- This function is kept for compatibility but movement logic is delegated
-function SpecialChaseHandler._moveToPlayerEnhanced(entityId, playerData, currentDistance, slowZoneDistance, enemyAI, CONFIG)
-    -- Movement is now handled by MovementSystem
-    -- This function is kept for compatibility but does nothing
-    -- The actual movement happens in MovementSystem.update()
-end
-
--- Clean up special enemy state when entity is destroyed
-function SpecialChaseHandler.cleanupEntity(entityId)
-    specialEnemyStates[entityId] = nil
+-- Perform special attack (placeholder for enhanced attack logic)
+function SpecialChaseHandler._performSpecialAttack(entityId, closestPlayer, combat, currentTime)
+    local model = EntityManager.getComponent(entityId, "Model")
+    if not model or not model.part then
+        return
+    end
+    
+    -- Set up attack state for special attack
+    combat.isAttacking = true
+    combat.attackStartTime = currentTime
+    combat.attackTargetPlayer = closestPlayer.player
+    
+    print("✨ Special enemy", entityId, "performing special attack on", closestPlayer.player.Name)
+    
+    -- Could implement special attack effects here
+    -- For now, just apply damage like a melee enemy but with special effects
+    if closestPlayer.player.Character and closestPlayer.player.Character:FindFirstChild("Humanoid") then
+        local humanoid = closestPlayer.player.Character.Humanoid
+        humanoid:TakeDamage(combat.damage or 15)
+        print("💥 Special attack hit", closestPlayer.player.Name, "for", combat.damage or 15, "damage")
+    end
+    
+    -- Reset attack state
+    combat.isAttacking = false
+    combat.attackStartTime = 0
+    combat.attackTargetPlayer = nil
 end
 
 return SpecialChaseHandler 

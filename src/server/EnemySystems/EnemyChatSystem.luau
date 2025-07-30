@@ -1,5 +1,6 @@
 -- EnemyChatSystem.luau
 -- Handles enemy-to-enemy chat when they're close during idle/patrol states
+-- Now a pure chat service - no state management, only conversation handling
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
@@ -7,6 +8,9 @@ local RunService = game:GetService("RunService")
 -- Import ECS modules
 local EntityManager = require(ReplicatedStorage.Shared.EntityManager)
 local EnemyChatData = require(ReplicatedStorage.Shared.EnemyChatData)
+
+-- Import rotation utility for facing each other during conversations
+local EnemyRotationUtility = require(script.Parent.EnemyRotationUtility)
 
 -- Import Components from our custom ECS (find ModuleScript specifically to avoid folder conflict)
 local Components = nil
@@ -26,85 +30,102 @@ EnemyChatSystem.name = "EnemyChatSystem"
 
 -- Configuration
 local CONFIG = {
-    UPDATE_INTERVAL = 2.0, -- Check for chat opportunities every 2 seconds
-    MAX_CHATS_PER_FRAME = 1, -- Limit concurrent chats to prevent spam
-    DEFAULT_CHAT_RANGE = 5, -- Default chat range in studs (changed from 12 to 5)
+    DEFAULT_CHAT_RANGE = 5, -- Default chat range in studs
     CHAT_CHANCE = 0.3, -- 30% chance to chat when conditions are met
 }
 
--- System state
-local lastUpdate = 0
-
 -- Initialize system
 function EnemyChatSystem.initialize()
-    lastUpdate = 0
     return true
 end
 
--- Main update function
-function EnemyChatSystem.update(deltaTime)
-    local currentTime = tick()
-    if currentTime - lastUpdate < CONFIG.UPDATE_INTERVAL then
-        return
+-- Check if two enemies can chat (proximity and cooldown check)
+function EnemyChatSystem.canEnemiesChat(entityId1, entityId2, currentTime)
+    local enemyAI1 = EntityManager.getComponent(entityId1, "EnemyAI")
+    local model1 = EntityManager.getComponent(entityId1, "Model")
+    local enemyType1 = EntityManager.getComponent(entityId1, "EnemyType")
+    local enemyChat1 = EntityManager.getComponent(entityId1, "EnemyChat")
+    
+    local enemyAI2 = EntityManager.getComponent(entityId2, "EnemyAI")
+    local model2 = EntityManager.getComponent(entityId2, "Model")
+    local enemyType2 = EntityManager.getComponent(entityId2, "EnemyType")
+    local enemyChat2 = EntityManager.getComponent(entityId2, "EnemyChat")
+    
+    -- Check if both enemies exist and have required components
+    if not enemyAI1 or not model1 or not enemyType1 or not enemyChat1 or
+       not enemyAI2 or not model2 or not enemyType2 or not enemyChat2 then
+        return false
     end
-    lastUpdate = currentTime
     
-    local chatsTriggered = 0
-    
-    -- Get all entities with EnemyAI, Model, EnemyType, and EnemyChat components
-    local chatEntities = EntityManager.getEntitiesWithAll({"EnemyAI", "Model", "EnemyType", "EnemyChat"})
-    
-    for i, entityId1 in ipairs(chatEntities) do
-        if chatsTriggered >= CONFIG.MAX_CHATS_PER_FRAME then
-            break
-        end
-        
-        local enemyAI1 = EntityManager.getComponent(entityId1, "EnemyAI")
-        local model1 = EntityManager.getComponent(entityId1, "Model")
-        local enemyType1 = EntityManager.getComponent(entityId1, "EnemyType")
-        local enemyChat1 = EntityManager.getComponent(entityId1, "EnemyChat")
-        
-        -- Check if this enemy can chat
-        if enemyAI1 and model1 and enemyType1 and enemyChat1 and 
-           model1.part and enemyChat1.canChat and
-           (enemyAI1.state == "idle" or enemyAI1.state == "patrol") and
-           (currentTime - enemyChat1.lastChatTime >= enemyChat1.chatCooldown) then
-            
-            -- Look for nearby chat partners
-            for j = i + 1, #chatEntities do
-                local entityId2 = chatEntities[j]
-                
-                local enemyAI2 = EntityManager.getComponent(entityId2, "EnemyAI")
-                local model2 = EntityManager.getComponent(entityId2, "Model")
-                local enemyType2 = EntityManager.getComponent(entityId2, "EnemyType")
-                local enemyChat2 = EntityManager.getComponent(entityId2, "EnemyChat")
-                
-                -- Check if partner can chat
-                if enemyAI2 and model2 and enemyType2 and enemyChat2 and 
-                   model2.part and enemyChat2.canChat and
-                   (enemyAI2.state == "idle" or enemyAI2.state == "patrol") and
-                   (currentTime - enemyChat2.lastChatTime >= enemyChat2.chatCooldown) and
-                   not EnemyChatSystem._haveChattedRecently(entityId1, entityId2, enemyChat1, enemyChat2, currentTime) then
-                    
-                    -- Check distance
-                    local distance = (model1.part.Position - model2.part.Position).Magnitude
-                    local chatRange = math.min(enemyChat1.chatRange or CONFIG.DEFAULT_CHAT_RANGE, 
-                                             enemyChat2.chatRange or CONFIG.DEFAULT_CHAT_RANGE)
-                    
-                    if distance <= chatRange then
-                        -- Roll for chat chance
-                        if math.random() <= CONFIG.CHAT_CHANCE then
-                            -- Trigger chat!
-                            EnemyChatSystem._triggerChat(entityId1, entityId2, enemyAI1, enemyAI2, 
-                                                       enemyType1, enemyType2, enemyChat1, enemyChat2, currentTime)
-                            chatsTriggered = chatsTriggered + 1
-                            break -- Only one chat per entity per frame
-                        end
-                    end
-                end
-            end
-        end
+    -- Check if both enemies are in idle or patrol state
+    if enemyAI1.state ~= "idle" and enemyAI1.state ~= "patrol" then
+        return false
     end
+    if enemyAI2.state ~= "idle" and enemyAI2.state ~= "patrol" then
+        return false
+    end
+    
+    -- Check if both enemies can chat
+    if not enemyChat1.canChat or not enemyChat2.canChat then
+        return false
+    end
+    
+    -- Check chat cooldowns
+    if currentTime - enemyChat1.lastChatTime < enemyChat1.chatCooldown then
+        return false
+    end
+    if currentTime - enemyChat2.lastChatTime < enemyChat2.chatCooldown then
+        return false
+    end
+    
+    -- Check if they've chatted recently with each other
+    if EnemyChatSystem._haveChattedRecently(entityId1, entityId2, enemyChat1, enemyChat2, currentTime) then
+        return false
+    end
+    
+    -- Check distance
+    local distance = (model1.part.Position - model2.part.Position).Magnitude
+    local chatRange = math.min(enemyChat1.chatRange or CONFIG.DEFAULT_CHAT_RANGE, 
+                             enemyChat2.chatRange or CONFIG.DEFAULT_CHAT_RANGE)
+    
+    if distance > chatRange then
+        return false
+    end
+    
+    return true
+end
+
+-- Start a conversation between two enemies (called by AISystem)
+function EnemyChatSystem.startConversation(entityId1, entityId2, currentTime)
+    local enemyAI1 = EntityManager.getComponent(entityId1, "EnemyAI")
+    local model1 = EntityManager.getComponent(entityId1, "Model")
+    local enemyType1 = EntityManager.getComponent(entityId1, "EnemyType")
+    local enemyChat1 = EntityManager.getComponent(entityId1, "EnemyChat")
+    
+    local enemyAI2 = EntityManager.getComponent(entityId2, "EnemyAI")
+    local model2 = EntityManager.getComponent(entityId2, "Model")
+    local enemyType2 = EntityManager.getComponent(entityId2, "EnemyType")
+    local enemyChat2 = EntityManager.getComponent(entityId2, "EnemyChat")
+    
+    if not enemyAI1 or not model1 or not enemyType1 or not enemyChat1 or
+       not enemyAI2 or not model2 or not enemyType2 or not enemyChat2 then
+        print("⚠️ EnemyChatSystem: Missing components for conversation between", entityId1, "and", entityId2)
+        return false
+    end
+    
+    -- Roll for chat chance
+    if math.random() > CONFIG.CHAT_CHANCE then
+        print("🎲 EnemyChatSystem: Chat chance roll failed for", entityId1, "and", entityId2)
+        return false
+    end
+    
+    print("💬 EnemyChatSystem: Starting conversation between", entityId1, "and", entityId2)
+    
+    -- Trigger the chat (which will only show chat bubbles)
+    EnemyChatSystem._triggerChat(entityId1, entityId2, enemyAI1, enemyAI2, 
+                               enemyType1, enemyType2, enemyChat1, enemyChat2, currentTime)
+    
+    return true
 end
 
 -- Check if two enemies have chatted recently with each other
@@ -138,29 +159,26 @@ function EnemyChatSystem._triggerChat(entityId1, entityId2, enemyAI1, enemyAI2,
         secondId, secondAI, secondType, secondChat = entityId1, enemyAI1, enemyType1, enemyChat1
     end
 
-    -- Get chat phrases
-    local firstPhrase = EnemyChatData:GetRandomPhrase(firstType.enemyType, firstAI.state)
-    local secondPhrase = EnemyChatData:GetRandomPhrase(secondType.enemyType, secondAI.state)
-    if not firstPhrase or not secondPhrase then
-        return -- No appropriate phrase found
-    end
-
-    -- Get models
+    -- Get models for rotation
     local firstModel = EntityManager.getComponent(firstId, "Model")
     local secondModel = EntityManager.getComponent(secondId, "Model")
     if not firstModel or not firstModel.part or not secondModel or not secondModel.part then
+        print("⚠️ EnemyChatSystem: Missing models for conversation")
         return
     end
 
-    -- First enemy chats immediately
-    EnemyChatSystem._displayChatBubble(firstModel.part, firstPhrase)
-    print("💬 Enemy", firstId, "said to", secondId, ":", firstPhrase)
+    -- Rotate enemies to face each other
+    print("🔄 EnemyChatSystem: Rotating enemies to face each other")
+    local rotation1 = EnemyRotationUtility.rotateToFaceTarget(firstId, secondModel.part.Position, true)
+    local rotation2 = EnemyRotationUtility.rotateToFaceTarget(secondId, firstModel.part.Position, true)
+    print("🔄 EnemyChatSystem: Rotation results - First enemy:", rotation1, "Second enemy:", rotation2)
+    
+    -- Small delay to ensure rotation is complete before chat
+    task.wait(0.1)
 
-    -- Second enemy chats after 0.5s delay
-    task.delay(0.5, function()
-        EnemyChatSystem._displayChatBubble(secondModel.part, secondPhrase)
-        print("💬 Enemy", secondId, "responded to", firstId, ":", secondPhrase)
-    end)
+    -- Start continuous conversation with alternating chat bubbles
+    EnemyChatSystem._startContinuousConversation(firstId, secondId, firstModel, secondModel, 
+                                               firstType, secondType, firstChat, secondChat, currentTime)
 
     -- Update chat cooldowns and tracking for both
     firstChat.lastChatTime = currentTime
@@ -171,15 +189,104 @@ function EnemyChatSystem._triggerChat(entityId1, entityId2, enemyAI1, enemyAI2,
     EntityManager.addComponent(secondId, "EnemyChat", secondChat)
 end
 
+-- Start a continuous conversation with alternating chat bubbles
+function EnemyChatSystem._startContinuousConversation(firstId, secondId, firstModel, secondModel, 
+                                                    firstType, secondType, firstChat, secondChat, startTime)
+    print("💬 EnemyChatSystem: Starting continuous conversation between", firstId, "and", secondId)
+    
+    local conversationDuration = 6.0 -- 6 seconds total conversation
+    local chatInterval = 1.0 -- New chat bubble every 1 second
+    local currentTime = startTime
+    
+    -- First enemy starts immediately
+    local firstPhrase = EnemyChatData:GetRandomPhrase(firstType.enemyType, "talking")
+    if firstPhrase then
+        EnemyChatSystem._displayChatBubble(firstModel.part, firstPhrase)
+        print("💬 Enemy", firstId, "said:", firstPhrase)
+    else
+        print("   ⚠️ No phrase found for first enemy type:", firstType.enemyType)
+    end
+    
+    -- Second enemy starts after 1 second
+    task.delay(1.0, function()
+        local secondPhrase = EnemyChatData:GetRandomPhrase(secondType.enemyType, "talking")
+        if secondPhrase then
+            EnemyChatSystem._displayChatBubble(secondModel.part, secondPhrase)
+            print("💬 Enemy", secondId, "responded:", secondPhrase)
+        else
+            print("   ⚠️ No phrase found for second enemy type:", secondType.enemyType)
+        end
+    end)
+    
+    -- Continue conversation with alternating bubbles
+    local chatCount = 0
+    local function continueConversation()
+        currentTime = tick()
+        local elapsed = currentTime - startTime
+        
+        -- Stop if conversation duration has passed
+        if elapsed >= conversationDuration then
+            print("💬 Conversation ended between", firstId, "and", secondId)
+            return
+        end
+        
+        chatCount = chatCount + 1
+        
+        -- Alternate between enemies
+        if chatCount % 2 == 1 then
+            -- First enemy's turn
+            local phrase = EnemyChatData:GetRandomPhrase(firstType.enemyType, "talking")
+            if phrase then
+                EnemyChatSystem._displayChatBubble(firstModel.part, phrase)
+                print("💬 Enemy", firstId, "said:", phrase)
+            end
+        else
+            -- Second enemy's turn
+            local phrase = EnemyChatData:GetRandomPhrase(secondType.enemyType, "talking")
+            if phrase then
+                EnemyChatSystem._displayChatBubble(secondModel.part, phrase)
+                print("💬 Enemy", secondId, "responded:", phrase)
+            end
+        end
+        
+        -- Schedule next chat bubble
+        task.delay(chatInterval, continueConversation)
+    end
+    
+    -- Start the continuous conversation after initial delay
+    task.delay(2.0, continueConversation)
+end
+
 -- Display chat bubble using Roblox's built-in chat system
 function EnemyChatSystem._displayChatBubble(characterPart, message)
     local ChatService = game:GetService("Chat")
-    local character = characterPart.Parent
+    
+    -- Find the character (model) that contains this part
+    local character = characterPart
+    if characterPart.Parent and characterPart.Parent:IsA("Model") then
+        character = characterPart.Parent
+    end
+    
     if character then
+        -- Look for Head part in the character
         local Head = character:FindFirstChild("Head")
         if Head then
             ChatService:Chat(Head, message)
+            return true
+        else
+            -- Try to find any part that could work for chat
+            local anyPart = character:FindFirstChildWhichIsA("BasePart")
+            if anyPart then
+                ChatService:Chat(anyPart, message)
+                return true
+            else
+                print("   ❌ No suitable part found for chat in character:", character.Name)
+                return false
+            end
         end
+    else
+        print("   ❌ No character found for chat bubble")
+        return false
     end
 end
 

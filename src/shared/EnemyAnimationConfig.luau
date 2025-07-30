@@ -34,7 +34,7 @@ EnemyAnimationConfig.ANIMATIONS = {
         }
     },
     walk = "rbxassetid://121278793466470", -- Walk animation
-    attack = "rbxassetid://ATTACK_ANIMATION_ID" -- Replace with actual attack animation ID
+    talk = "rbxassetid://110570302053526" -- Talk animation
 }
 
 -- Animation settings
@@ -57,9 +57,7 @@ EnemyAnimationConfig.SETTINGS = {
 -- Idle-specific settings
 EnemyAnimationConfig.IDLE_SETTINGS = {
     PREVENT_REPEAT = true, -- Prevent same animation from playing twice in a row
-    MIN_TRANSITION_DELAY = 0.1, -- Minimum delay between idle animations
-    WEIGHT_DECAY_FACTOR = 0.5, -- Reduce weight of recently played animations
-    WEIGHT_DECAY_WINDOW = 10, -- Time window for weight decay in seconds
+    MIN_TRANSITION_DELAY = 0.1 -- Minimum delay between idle animations
 }
 
 return EnemyAnimationConfig 

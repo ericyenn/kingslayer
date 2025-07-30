@@ -115,7 +115,6 @@ EnemyDefinitions.enemies = {
             moveSpeed = 10, -- Slower movement
             damage = 7,
             attackSpeed = 1.2,
-            attackRange = 40,
             detectionRange = 45,
             projectileSpeed = 60,
             aimAccuracy = 0.85,
@@ -157,24 +156,18 @@ EnemyDefinitions.enemies = {
         material = Enum.Material.Neon,
         
         customConfig = {
-            moveSpeed = 8,
-            damage = 35,
-            attackSpeed = 0.8, -- Slower but powerful
-            attackRange = 30,
+            moveSpeed = 12,
+            damage = 25,
+            attackSpeed = 1.5,
             detectionRange = 35,
-            projectileSpeed = 40,
-            projectileType = "magic_bolt",
-            aimAccuracy = 0.9,
-            -- Ranged-specific settings
-            burstSize = 1, -- Single powerful shot
-            shotInterval = 1,
-            aimTime = 0.3,
-            postBurstPause = 2.0, -- Increased to 2.0 seconds for slower attacks
-            repositionThreshold = 12,
-            optimalDistance = 30,
-            projectileSize = Vector3.new(0.3, 0.3, 0.3),
-            projectileColor = Color3.fromRGB(100, 60, 120), -- Purple
-            projectileLifetime = 4,
+            -- Special abilities
+            canTeleport = true,
+            teleportRange = 20,
+            -- Idle movement settings
+            idleMovementEnabled = true,
+            idleMovementRadius = 15,
+            idleMovementInterval = 5,
+            idleMovementSpeed = 8,
         },
         
         loot = {
@@ -345,15 +338,13 @@ function EnemyDefinitions:CreateEnemyComponents(enemyId)
         }),
         EnemyAI = Components.create("EnemyAI", {
             state = "idle",
-            detectionRange = cfg.detectionRange or 30,
-            attackRange = cfg.attackRange or 5,
+            detectionRange = cfg.detectionRange,
             speed = cfg.moveSpeed or 16,
             homePosition = Vector3.new(0, 0, 0)
         }),
         Combat = Components.create("Combat", {
             damage = cfg.damage or 10,
-            attackCooldown = cfg.attackSpeed and (1 / cfg.attackSpeed) or 1,
-            attackRange = cfg.attackRange or 5
+            attackCooldown = cfg.attackSpeed and (1 / cfg.attackSpeed) or 1
         }),
         CombatStats = Components.create("CombatStats", {
             baseAttack = cfg.damage or 10,
@@ -413,6 +404,11 @@ function EnemyDefinitions:ValidateEnemyDefinition(enemyId)
     
     if not enemy.health or enemy.health <= 0 then
         return false, "Enemy must have valid health"
+    end
+    
+    -- Validate that detectionRange is defined
+    if not enemy.customConfig or not enemy.customConfig.detectionRange then
+        return false, "Enemy must have detectionRange defined in customConfig"
     end
     
     return true

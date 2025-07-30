@@ -23,7 +23,8 @@ end
 local EntityManager = require(ReplicatedStorage.Shared.EntityManager)
 local HitboxSystem = require(ReplicatedStorage.Shared.HitboxSystem)
 
--- Rotation utility removed for melee enemies (only ranged enemies rotate)
+-- Import MovementSystem for movement commands
+local MovementSystem = require(script.Parent.MovementSystem)
 
 local MeleeChaseHandler = {}
 
@@ -35,63 +36,74 @@ local ATTACK_DURATION = 0.2 -- Duration of moving shapecast attack
 local MELEE_CONFIG = {
     PERSISTENCE_MULTIPLIER = 1.5,      -- Chase until 1.5x detection range
     ATTACK_WHILE_MOVING = true,        -- Can attack while moving
+    STOP_DISTANCE = 1.5,               -- Stop moving when this close to player
 }
 
--- Handle melee enemy chase behavior
-function MeleeChaseHandler.handleChase(entityId, enemyAI, model, closestPlayer, distance, currentTime, entityLastPlayerPositions, CONFIG)
-    -- Check if closestPlayer is dead, if so, stop targeting
-    if closestPlayer and closestPlayer.player then
-        local CollectionService = game:GetService("CollectionService")
-        print("[MeleeChaseHandler] (handleChase) Checking Dead tag for player:", closestPlayer.player.Name, CollectionService:HasTag(closestPlayer.player, "Dead"))
-        if CollectionService:HasTag(closestPlayer.player, "Dead") then
-            return "idle" -- Stop targeting dead players
-        end
-    end
-    -- Get enemy-specific ranges
-    local attackRange = enemyAI.attackRange or CONFIG.ATTACK_RANGE
-    local detectionRange = enemyAI.detectionRange or CONFIG.DETECTION_RANGE
-    
-    -- Ensure Combat component exists when chasing
+-- Clean up melee chase handler for an entity
+function MeleeChaseHandler.cleanup(entityId)
+    -- Stop any active attacks for this entity
     local combat = EntityManager.getComponent(entityId, "Combat")
-    if not combat then
-        -- Try to get config from EnemyType or EnemyAI
-        local enemyType = EntityManager.getComponent(entityId, "EnemyType")
-        local damage = (enemyType and enemyType.config and enemyType.config.damage) or 10
-        local attackCooldown = (enemyType and enemyType.config and enemyType.config.attackSpeed) and (1 / enemyType.config.attackSpeed) or 1
-        local attackRangeVal = (enemyType and enemyType.config and enemyType.config.attackRange) or attackRange or 5
-        EntityManager.addComponent(entityId, "Combat", Components.create("Combat", {
-            damage = damage,
-            attackCooldown = attackCooldown,
-            attackRange = attackRangeVal
-        }))
-        -- Optionally, debug print
-        -- print("[Debug] Created Combat component for entity", entityId, "on chase start")
+    if combat then
+        combat.isAttacking = false
+        combat.attackStartTime = 0
+        combat.attackTargetPlayer = nil
+        EntityManager.addComponent(entityId, "Combat", combat)
     end
+    
+    print("🧹 MeleeChaseHandler: Cleaned up entity", entityId)
+end
+
+-- Handle melee enemy chase behavior (SERVICE - no state changes)
+function MeleeChaseHandler.handleChase(entityId, enemyAI, model, closestPlayer, currentTime)
+    -- Validate inputs
+    if not closestPlayer or not closestPlayer.player then
+        return -- No valid target, but don't change state (AISystem handles that)
+    end
+    
+    -- Check if target is dead
+    local CollectionService = game:GetService("CollectionService")
+    if CollectionService:HasTag(closestPlayer.player, "Dead") then
+        return -- Target is dead, but don't change state (AISystem handles that)
+    end
+    
+    -- Get enemy-specific ranges
+    local detectionRange = enemyAI.detectionRange
+    if not detectionRange then
+        warn("⚠️ No detectionRange defined for entity", entityId, "- cannot chase")
+        return
+    end
+    
+    -- Calculate distance to target
+    local currentPosition = model.part.Position
+    local targetPosition = closestPlayer.position
+    local distance = (currentPosition - targetPosition).Magnitude
     
     -- Check if we should give up chase (melee enemies are more persistent)
-    if not closestPlayer then
-        return "idle"  -- Lost target
-    end
-    
     local maxChaseDistance = detectionRange * MELEE_CONFIG.PERSISTENCE_MULTIPLIER
     if distance > maxChaseDistance then
-        return "idle"  -- Target too far, give up
+        return -- Target too far, but don't change state (AISystem handles that)
     end
     
     -- Check chase timeout
     local chaseTime = currentTime - (enemyAI.stateStartTime or currentTime)
-    if chaseTime >= CONFIG.CHASE_TIMEOUT then
-        return "idle"  -- Timeout
+    if chaseTime >= 10 then -- 10 second timeout
+        return -- Timeout, but don't change state (AISystem handles that)
     end
     
+    -- === MOVEMENT LOGIC ===
+    -- Melee enemies move directly toward player until close enough
+    local baseSpeed = enemyAI.speed or 16
+    
+    -- Use MovementSystem to move toward player
+    MovementSystem.moveTowardPlayer(entityId, targetPosition, baseSpeed, MELEE_CONFIG.STOP_DISTANCE)
+    
     -- === ATTACK LOGIC (continuous during chase) ===
+    local attackRange = 5 -- Default attack range
     local inAttackRange = distance <= attackRange
     if inAttackRange then
         -- Handle shapecast-based attacking while in range
         MeleeChaseHandler._handleContinuousAttack(entityId, closestPlayer, currentTime)
     end
-    
-    return "chase"  -- Continue chasing
 end
 
 -- Handle continuous attacking during chase with shapecast
@@ -101,18 +113,12 @@ function MeleeChaseHandler._handleContinuousAttack(entityId, closestPlayer, curr
         -- Create fallback combat component silently (no warning)
         local enemyAI = EntityManager.getComponent(entityId, "EnemyAI")
         local enemyType = EntityManager.getComponent(entityId, "EnemyType")
-        local attackRange = (enemyType and enemyType.config and enemyType.config.attackRange) or (enemyAI and enemyAI.attackRange) or 5
         local damage = (enemyType and enemyType.config and enemyType.config.damage) or 10
         local attackCooldown = (enemyType and enemyType.config and enemyType.config.attackSpeed) and (1 / enemyType.config.attackSpeed) or 1
         EntityManager.addComponent(entityId, "Combat", Components.create("Combat", {
-            target = closestPlayer.entity,
             damage = damage,
-            lastAttackTime = currentTime,
-            attackRange = attackRange,
             attackCooldown = attackCooldown
         }))
-        -- Optionally, debug print
-        -- print("[Debug] Silently created fallback Combat component for entity", entityId)
         combat = EntityManager.getComponent(entityId, "Combat")
     end
     
@@ -137,8 +143,6 @@ function MeleeChaseHandler._performShapecastAttack(entityId, closestPlayer, comb
         return
     end
     
-    -- Animation system removed - no longer needed
-    
     -- Set up attack state for moving shapecast
     combat.isAttacking = true
     combat.attackStartTime = currentTime
@@ -150,15 +154,6 @@ function MeleeChaseHandler._performShapecastAttack(entityId, closestPlayer, comb
     print("⚔️ Melee enemy", entityId, "started moving shapecast attack on", closestPlayer.player.Name)
 end
 
--- Animation system removed - no longer needed
-
--- Movement is now handled by MovementSystem
--- This function is kept for compatibility but does nothing
-function MeleeChaseHandler._moveToPlayerWithZones(entityId, playerData, currentDistance, slowZoneDistance, enemyAI, CONFIG)
-    -- Movement is now handled by MovementSystem
-    -- This function is kept for compatibility but does nothing
-end
-
 -- Deal damage to player from shapecast
 function MeleeChaseHandler._dealShapecastDamage(entityId, player, damage)
     if not player.Character or not player.Character:FindFirstChild("Humanoid") then
@@ -166,7 +161,6 @@ function MeleeChaseHandler._dealShapecastDamage(entityId, player, damage)
     end
     -- Prevent damage to dead players
     local CollectionService = game:GetService("CollectionService")
-    print("[MeleeChaseHandler] Checking Dead tag for player:", player.Name, CollectionService:HasTag(player, "Dead"))
     if CollectionService:HasTag(player, "Dead") then
         print("[MeleeChaseHandler] Player is dead, not applying shapecast damage.")
         return

@@ -72,7 +72,7 @@ end
 
 -- Import enemy systems (with error handling)
 local EnemySystems = script.Parent.EnemySystems
-local EnemySpawnSystem, EnemyAISystem, EnemyCombatSystem, EnemyModelSystem, EnemyChatSystem, MovementSystem
+local EnemySpawnSystem, EnemyAISystem, EnemyCombatSystem, EnemyModelSystem
 
 local success, result = pcall(function()
     return require(EnemySystems.EnemySpawnSystem)
@@ -114,45 +114,24 @@ else
     error("❌ Failed to load EnemyModelSystem: " .. tostring(result))
 end
 
-local success, result = pcall(function()
-    return require(EnemySystems.EnemyChatSystem)
-end)
-if success then
-    EnemyChatSystem = result
-    print("✅ EnemyChatSystem loaded successfully")
-else
-    error("❌ Failed to load EnemyChatSystem: " .. tostring(result))
-end
-
-local success, result = pcall(function()
-    return require(EnemySystems.MovementSystem)
-end)
-if success then
-    MovementSystem = result
-    print("✅ MovementSystem loaded successfully")
-else
-    error("❌ Failed to load MovementSystem: " .. tostring(result))
-end
-
 -- Test enemy ECS core
 print("📦 Enemy ECS loaded: EntityManager, EnemySystemManager, EnemyComponents")
 
 -- Only register systems if all modules loaded successfully
 if EntityManager and EnemySystemManager and EnemyComponents and 
-   EnemySpawnSystem and EnemyAISystem and EnemyCombatSystem and EnemyModelSystem and EnemyChatSystem and MovementSystem then
+   EnemySpawnSystem and EnemyAISystem and EnemyCombatSystem and EnemyModelSystem then
    
-    -- Register enemy systems
+    -- Register enemy systems (MovementSystem is now a service called by AISystem)
     EnemySystemManager.registerSystem(EnemySpawnSystem)
     EnemySystemManager.registerSystem(EnemyAISystem)
     EnemySystemManager.registerSystem(EnemyCombatSystem)
     EnemySystemManager.registerSystem(EnemyModelSystem)
-    EnemySystemManager.registerSystem(EnemyChatSystem)
-    EnemySystemManager.registerSystem(MovementSystem)
 
     -- Start enemy system game loop
     EnemySystemManager.startGameLoop()
     
     print("✅ All enemy systems registered and started")
+    print("🏃 MovementSystem is now a service called by AISystem (not a standalone system)")
 else
     warn("❌ Some enemy systems failed to load - enemy system disabled")
     return {initialized = false, error = "Failed to load enemy modules"}
@@ -179,8 +158,6 @@ return {
         EnemySpawnSystem,
         EnemyAISystem,
         EnemyCombatSystem,
-        EnemyModelSystem,
-        EnemyChatSystem,
-        MovementSystem
+        EnemyModelSystem
     }
 } 

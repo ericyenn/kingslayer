@@ -1,6 +1,6 @@
 -- AISystem.luau
 -- AI system for enemy behavior
--- Handles state transitions and decision making for enemies
+-- Handles state transitions, decision making, and coordinates chase handlers
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Players = game:GetService("Players")
@@ -25,13 +25,16 @@ if not Components then
     error("AISystem: Could not find EnemyComponents ModuleScript")
 end
 
--- Import modular chase handlers
+-- Import chase handlers as services
 local MeleeChaseHandler = require(script.Parent.MeleeChaseHandler)
 local RangedChaseHandler = require(script.Parent.RangedChaseHandler)
 local SpecialChaseHandler = require(script.Parent.SpecialChaseHandler)
 
--- Import unified movement system
+-- Import movement system
 local MovementSystem = require(script.Parent.MovementSystem)
+
+-- Import enemy chat system
+local EnemyChatSystem = require(script.Parent.EnemyChatSystem)
 
 local AISystem = {}
 AISystem.name = "AISystem"
@@ -39,27 +42,33 @@ AISystem.name = "AISystem"
 -- Configuration
 local CONFIG = {
 	UPDATE_INTERVAL_IDLE = 1/8, -- 8 FPS for idle/patrol states
-	UPDATE_INTERVAL_CHASE = 1/10, -- 10 FPS for chase/attack states (reduced to avoid conflicts)
+	UPDATE_INTERVAL_CHASE = 1/10, -- 10 FPS for chase states
 	MAX_ENTITIES_PER_FRAME = 12,
 	
 	-- AI ranges
-	DETECTION_RANGE = 30,
 	ATTACK_RANGE = 5,
 	CHASE_TIMEOUT = 10, -- Give up chase after this many seconds
 	
 	-- State timeouts
+	IDLE_TIME_MIN = 3, -- Minimum time to stay in idle state (seconds)
+	IDLE_TIME_MAX = 10, -- Maximum time to stay in idle state (seconds)
 	PATROL_TIME = 3,
+	TALKING_DURATION = 6.0, -- Duration of talking state (6 seconds)
 	
-	-- Zone-based activation
+	-- Zone-based activation (PERFORMANCE OPTIMIZATION)
 	ACTIVATION_ZONE_RADIUS = 150, -- Only process AI within this distance of players
-	DEACTIVATION_ZONE_RADIUS = 200 -- Disable AI when players beyond this distance
+	
+	-- Chat detection
+	CHAT_CHECK_INTERVAL = 2.0, -- Check for chat opportunities every 2 seconds
+	CHAT_DETECTION_RANGE = 8, -- Range to detect nearby enemies for chat
 }
 
 -- AI States
 local AI_STATES = {
 	IDLE = "idle",
 	PATROL = "patrol", 
-	CHASE = "chase",  -- Now handles both chasing and attacking
+	CHASE = "chase",
+	TALKING = "talking",
 	DEAD = "dead"
 }
 
@@ -101,34 +110,50 @@ function AISystem._findClosestPlayer(position)
     return closestPlayer, closestDistance
 end
 
--- Determine if entity should be updated based on state and timing
-function AISystem._shouldUpdateEntity(entityId, enemyAI, currentTime)
-	local state = enemyAI.state or AI_STATES.IDLE
-	local lastUpdateTime = enemyAI.lastUpdateTime or 0
-	
-	-- Use different update intervals based on state
-	local updateInterval
-	if state == AI_STATES.CHASE then
-		-- Don't throttle chase state - let MovementSystem handle movement at 60 FPS
-		-- Only update AI logic (target validation, state transitions) at 10 FPS
-		updateInterval = CONFIG.UPDATE_INTERVAL_CHASE
-	else
-		updateInterval = CONFIG.UPDATE_INTERVAL_IDLE
-	end
-	
-	return (currentTime - lastUpdateTime) >= updateInterval
-end
-
--- Set random patrol target (constrained to home position radius)
-function AISystem._setRandomPatrolTarget(entityId, currentPos)
-	local model = EntityManager.getComponent(entityId, "Model")
-	local enemyAI = EntityManager.getComponent(entityId, "EnemyAI")
-	if not model or not model.humanoid or not model.humanoid.Parent or not enemyAI then
-		return
-	end
-	
-	-- Use MovementSystem for patrol movement
-	MovementSystem.moveToPatrolPosition(entityId, model, enemyAI)
+-- Check for nearby enemies that could start a conversation
+function AISystem._checkForChatOpportunity(entityId, enemyAI, model, currentTime)
+    -- Check if enough time has passed since last chat check
+    local lastChatCheck = enemyAI.lastChatCheck or 0
+    if currentTime - lastChatCheck < CONFIG.CHAT_CHECK_INTERVAL then
+        return
+    end
+    
+    -- Find nearby enemies that could chat
+    local allChatEntities = EntityManager.getEntitiesWithAll({"EnemyAI", "Model", "EnemyChat"})
+    local nearbyEntities = {}
+    
+    for _, otherEntityId in ipairs(allChatEntities) do
+        if otherEntityId ~= entityId then
+            local otherModel = EntityManager.getComponent(otherEntityId, "Model")
+            if otherModel and otherModel.part then
+                local distance = (model.part.Position - otherModel.part.Position).Magnitude
+                if distance <= CONFIG.CHAT_DETECTION_RANGE then
+                    table.insert(nearbyEntities, otherEntityId)
+                end
+            end
+        end
+    end
+    
+    -- Check each nearby enemy for chat opportunity
+    for _, otherEntityId in ipairs(nearbyEntities) do
+        -- Check if these enemies can chat
+        if EnemyChatSystem.canEnemiesChat(entityId, otherEntityId, currentTime) then
+            -- Start conversation and set both enemies to talking state
+            if EnemyChatSystem.startConversation(entityId, otherEntityId, currentTime) then
+                -- Set both enemies to talking state
+                local otherEnemyAI = EntityManager.getComponent(otherEntityId, "EnemyAI")
+                if otherEnemyAI then
+                    AISystem._setState(otherEntityId, otherEnemyAI, AI_STATES.TALKING)
+                end
+                AISystem._setState(entityId, enemyAI, AI_STATES.TALKING)
+                break
+            end
+        end
+    end
+    
+    -- Update last chat check time
+    enemyAI.lastChatCheck = currentTime
+    EntityManager.addComponent(entityId, "EnemyAI", enemyAI)
 end
 
 -- Set AI state
@@ -141,7 +166,20 @@ function AISystem._setState(entityId, enemyAI, newState)
 		-- Clean up tracking when leaving chase state
 		if oldState == AI_STATES.CHASE and newState ~= AI_STATES.CHASE then
 			MovementSystem.cleanup(entityId)
-			print("[AI] Entity", entityId, "left chase state, cleaned up movement tracking")
+			
+			-- Clean up chase handlers
+			local enemyType = EntityManager.getComponent(entityId, "EnemyType")
+			if enemyType then
+				if enemyType.enemyType == "melee" then
+					MeleeChaseHandler.cleanup(entityId)
+				elseif enemyType.enemyType == "ranged" then
+					RangedChaseHandler.cleanup(entityId)
+				elseif enemyType.enemyType == "special" then
+					SpecialChaseHandler.cleanup(entityId)
+				end
+			end
+			
+			print("[AI] Entity", entityId, "left chase state, cleaned up all handlers")
 		end
 		
 		-- Initialize new state
@@ -162,9 +200,16 @@ function AISystem._setState(entityId, enemyAI, newState)
 				MovementSystem.stopMovement(entityId, model)
 				print("[AI] Entity", entityId, "entered idle state, stopped movement immediately")
 			end
+		elseif newState == AI_STATES.TALKING then
+			-- Stop movement and other actions when entering talking state
+			local model = EntityManager.getComponent(entityId, "Model")
+			if model and model.part then
+				MovementSystem.stopMovement(entityId, model)
+				print("[AI] Entity", entityId, "entered talking state, stopped movement")
+			end
 		end
 		
-		-- Send state update to clients
+		-- Simple RemoteEvent call to update animations
 		local model = EntityManager.getComponent(entityId, "Model")
 		if model and model.model then
 			RemoteEvents.EnemyAIStateUpdate:FireAllClients(model.model, entityId, newState)
@@ -176,136 +221,156 @@ function AISystem._setState(entityId, enemyAI, newState)
 	end
 end
 
--- Handle idle state (now waits for animation completion)
-function AISystem._handleIdleState(entityId, enemyAI, model, closestPlayer, closestDistance, currentTime)
-	-- Idle state now waits for animation completion signal from client
-	-- No random timer logic - animation system will notify when idle animation completes
-	-- This function is called periodically but doesn't transition to patrol automatically
+-- Handle idle state
+function AISystem._handleIdleState(entityId, enemyAI, model, currentTime)
+	-- Check for chat opportunities during idle state
+	AISystem._checkForChatOpportunity(entityId, enemyAI, model, currentTime)
+	
+	-- Get the idle duration for this entity (random between min and max)
+	local idleDuration = enemyAI.idleDuration
+	if not idleDuration then
+		-- Set random idle duration when entering idle state
+		idleDuration = math.random(CONFIG.IDLE_TIME_MIN, CONFIG.IDLE_TIME_MAX)
+		enemyAI.idleDuration = idleDuration
+		print("[AI] Entity", entityId, "set idle duration to", idleDuration, "seconds")
+	end
+	
+	-- Transition to patrol after idle time (since animation system is now purely reactive)
+	local stateTime = currentTime - (enemyAI.stateStartTime or currentTime)
+	if stateTime >= idleDuration then
+		AISystem._setState(entityId, enemyAI, AI_STATES.PATROL)
+		enemyAI.idleDuration = nil -- Clear the duration for next idle cycle
+		print("[AI] Entity", entityId, "idle time complete (", idleDuration, "s), transitioning to patrol")
+		EntityManager.addComponent(entityId, "EnemyAI", enemyAI)
+	end
 end
 
 -- Handle patrol state
-function AISystem._handlePatrolState(entityId, enemyAI, model, closestPlayer, closestDistance, currentTime)
-	-- Return to idle after patrol time
+function AISystem._handlePatrolState(entityId, enemyAI, model, currentTime)
+	-- Check for chat opportunities during patrol state
+	AISystem._checkForChatOpportunity(entityId, enemyAI, model, currentTime)
+	
+	-- Handle patrol movement
 	local stateTime = currentTime - (enemyAI.stateStartTime or currentTime)
+	
+	-- Move to patrol position if not already moving
+	if not MovementSystem.isMoving(entityId) then
+		local patrolTarget = AISystem._getPatrolTarget(entityId, model)
+		if patrolTarget then
+			local baseSpeed = enemyAI.speed or 16
+			MovementSystem.moveToPosition(entityId, patrolTarget, baseSpeed * 0.7) -- Slower patrol speed
+			print("[AI] Entity", entityId, "moving to patrol position")
+		end
+	end
+	
+	-- Return to idle after patrol time
 	if stateTime >= CONFIG.PATROL_TIME then
+		MovementSystem.stopMovement(entityId) -- Stop movement when leaving patrol
 		AISystem._setState(entityId, enemyAI, AI_STATES.IDLE)
 		enemyAI.target = nil
-		print("[AI] Entity", entityId, "cleared target (patrol->idle)")
+		print("[AI] Entity", entityId, "patrol time complete, returning to idle")
 		EntityManager.addComponent(entityId, "EnemyAI", enemyAI)
 	end
 end
 
--- Handle idle animation completion (using entity ID directly)
-function AISystem._handleIdleAnimationComplete(enemyModel, entityId)
-	-- Use the entity ID directly - no searching needed!
-	if not entityId then
-		print("[AI] No entity ID provided for enemy model:", enemyModel.Name)
-		return
+-- Get patrol target position for an entity
+function AISystem._getPatrolTarget(entityId, model)
+	if not model or not model.part then
+		return nil
 	end
 	
-	local enemyAI = EntityManager.getComponent(entityId, "EnemyAI")
-	local model = EntityManager.getComponent(entityId, "Model")
+	-- Simple patrol: move to a random position within 20 studs of current position
+	local currentPosition = model.part.Position
+	local randomOffset = Vector3.new(
+		math.random(-20, 20),
+		0,
+		math.random(-20, 20)
+	)
 	
-	if not enemyAI or not model then
-		print("[AI] Missing AI or Model component for entity:", entityId)
-		return
-	end
+	return currentPosition + randomOffset
+end
+
+-- Handle talking state
+function AISystem._handleTalkingState(entityId, enemyAI, model, currentTime)
+	-- Talking state lasts for a configured duration
+	local timeInTalking = currentTime - enemyAI.stateStartTime
+	local timeRemaining = CONFIG.TALKING_DURATION - timeInTalking
 	
-	-- Check if entity is still in idle state
-	if enemyAI.state == AI_STATES.IDLE then
-		print("[AI] Entity", entityId, "idle animation completed, transitioning to patrol")
+	if timeInTalking >= CONFIG.TALKING_DURATION then
+		-- Conversation ended, transition to patrol state
+		print("[AI] Entity", entityId, "talking ended, transitioning to patrol")
 		AISystem._setState(entityId, enemyAI, AI_STATES.PATROL)
-		-- MovementSystem will handle setting the patrol target in its update loop
-		enemyAI.target = nil
-		EntityManager.addComponent(entityId, "EnemyAI", enemyAI)
 	else
-		print("[AI] Entity", entityId, "not in idle state, ignoring animation completion")
+		-- Debug: Log remaining time occasionally
+		if math.floor(timeRemaining) % 2 == 0 and timeRemaining > 0 then
+			print("[AI] Entity", entityId, "still talking,", math.floor(timeRemaining), "seconds remaining")
+		end
 	end
 end
 
--- Handle chase state using modular chase handlers
-function AISystem._handleChaseWithModularHandlers(entityId, enemyAI, model, closestPlayer, closestDistance, currentTime)
-	-- Get enemy type to determine which handler to use
+-- Call appropriate chase handler service
+function AISystem._callChaseHandler(entityId, enemyAI, model, closestPlayer, currentTime)
 	local enemyType = EntityManager.getComponent(entityId, "EnemyType")
 	if not enemyType then
 		warn("No EnemyType component found for entity", entityId, "- defaulting to melee behavior")
 		enemyType = {enemyType = "melee"}
 	end
 	
-	local result = "chase"  -- Default to continue chasing
-	
-	-- Route to appropriate chase handler based on enemy type
-	-- Note: Movement is handled by MovementSystem at 60 FPS, not by chase handlers
-	if enemyType.enemyType == "melee" then
-		result = MeleeChaseHandler.handleChase(entityId, enemyAI, model, closestPlayer, closestDistance, currentTime, nil, CONFIG)
-	elseif enemyType.enemyType == "ranged" then
-		result = RangedChaseHandler.handleChase(entityId, enemyAI, model, closestPlayer, closestDistance, currentTime, nil, CONFIG)
-	elseif enemyType.enemyType == "special" then
-		result = SpecialChaseHandler.handleChase(entityId, enemyAI, model, closestPlayer, closestDistance, currentTime, nil, CONFIG)
-	else
-		warn("Unknown enemy type:", enemyType.enemyType, "for entity", entityId, "- using melee handler")
-		result = MeleeChaseHandler.handleChase(entityId, enemyAI, model, closestPlayer, closestDistance, currentTime, nil, CONFIG)
+	-- Validate inputs before calling chase handler
+	if not closestPlayer or not closestPlayer.player then
+		warn("Invalid closestPlayer for entity", entityId, "- skipping chase handler")
+		return
 	end
 	
-	-- Handle state transitions returned by chase handlers
-	if result == "idle" then
-		AISystem._setState(entityId, enemyAI, AI_STATES.IDLE)
-	elseif result == "patrol" then
-		AISystem._setState(entityId, enemyAI, AI_STATES.PATROL)
-	-- If result is "chase", stay in chase state
+	if not model or not model.part then
+		warn("Invalid model for entity", entityId, "- skipping chase handler")
+		return
+	end
+	
+	if not enemyAI.detectionRange then
+		warn("No detectionRange defined for entity", entityId, "- skipping chase handler")
+		return
+	end
+	
+	-- Call appropriate chase handler service
+	local success, error = pcall(function()
+		if enemyType.enemyType == "melee" then
+			MeleeChaseHandler.handleChase(entityId, enemyAI, model, closestPlayer, currentTime)
+		elseif enemyType.enemyType == "ranged" then
+			RangedChaseHandler.handleChase(entityId, enemyAI, model, closestPlayer, currentTime)
+		elseif enemyType.enemyType == "special" then
+			SpecialChaseHandler.handleChase(entityId, enemyAI, model, closestPlayer, currentTime)
+		else
+			warn("Unknown enemy type:", enemyType.enemyType, "for entity", entityId, "- using melee handler")
+			MeleeChaseHandler.handleChase(entityId, enemyAI, model, closestPlayer, currentTime)
+		end
+	end)
+	
+	if not success then
+		warn("Error in chase handler for entity", entityId, ":", error)
 	end
 end
 
--- Update AI for a single entity
-function AISystem._updateEntityAI(entityId, enemyAI, model, currentTime, closestPlayer, closestDistance)
-	-- Update the last update time
-	enemyAI.lastUpdateTime = currentTime
+-- Determine if entity should be updated based on state and timing
+function AISystem._shouldUpdateEntity(entityId, enemyAI, currentTime)
+	local state = enemyAI.state or AI_STATES.IDLE
+	local lastUpdateTime = enemyAI.lastUpdateTime or 0
 	
-	local currentState = enemyAI.state or AI_STATES.IDLE
-	local currentPosition = model.part.Position
-	
-	-- Early exit if closestPlayer is dead or invalid
-	if closestPlayer and CollectionService:HasTag(closestPlayer.player, "Dead") then
-		enemyAI.target = nil
-		AISystem._setState(entityId, enemyAI, AI_STATES.IDLE)
-		EntityManager.addComponent(entityId, "EnemyAI", enemyAI)
-		return
+	-- Use different update intervals based on state
+	local updateInterval
+	if state == AI_STATES.CHASE then
+		updateInterval = CONFIG.UPDATE_INTERVAL_CHASE
+	else
+		updateInterval = CONFIG.UPDATE_INTERVAL_IDLE
 	end
 	
-	-- State machine
-	if currentState == AI_STATES.IDLE then
-		AISystem._handleIdleState(entityId, enemyAI, model, closestPlayer, closestDistance, currentTime)
-		
-	elseif currentState == AI_STATES.PATROL then
-		AISystem._handlePatrolState(entityId, enemyAI, model, closestPlayer, closestDistance, currentTime)
-		
-	elseif currentState == AI_STATES.CHASE then
-		-- For chase state, only handle AI logic (target validation, state transitions)
-		-- Movement is handled by MovementSystem at 60 FPS
-		local result = AISystem._handleChaseWithModularHandlers(entityId, enemyAI, model, closestPlayer, closestDistance, currentTime)
-		
-	elseif currentState == AI_STATES.DEAD then
-		-- Dead entities don't do anything
-		return
-	end
-	
-	-- Save the updated AI component
-	EntityManager.addComponent(entityId, "EnemyAI", enemyAI)
+	return (currentTime - lastUpdateTime) >= updateInterval
 end
 
 -- Initialize system
 function AISystem.initialize()
-	-- Set up idle animation completion listener
-	if RemoteEvents.IdleAnimationComplete then
-		RemoteEvents.IdleAnimationComplete.OnServerEvent:Connect(function(player, enemyModel, entityId)
-			print("[AI] Received idle animation completion for enemy:", enemyModel.Name, "entity ID:", entityId, "from player:", player.Name)
-			AISystem._handleIdleAnimationComplete(enemyModel, entityId)
-		end)
-		print("[AI] Set up idle animation completion listener")
-	else
-		print("[AI] Warning: IdleAnimationComplete RemoteEvent not found")
-	end
-	
+	-- Animation system is now purely reactive - no listeners needed
+	print("[AI] Initialized - animation system is purely reactive")
 	return true
 end
 
@@ -332,7 +397,7 @@ function AISystem.update(deltaTime)
 		local currentPosition = model.part.Position
 		local currentState = enemyAI.state or AI_STATES.IDLE
 		
-		-- Check if any player is within activation zone
+		-- STEP 1: PERFORMANCE CHECK - Skip if no players in activation zone
 		local isPlayerInActivationZone = false
 		for _, player in pairs(Players:GetPlayers()) do
 			if isValidPlayer(player) then
@@ -344,78 +409,80 @@ function AISystem.update(deltaTime)
 			end
 		end
 		
-		-- Disable AI when players are too far
+		-- Skip processing entirely if no players in activation zone
 		if not isPlayerInActivationZone then
 			if currentState ~= AI_STATES.IDLE then
 				enemyAI.target = nil
 				AISystem._setState(entityId, enemyAI, AI_STATES.IDLE)
-				-- MovementSystem will handle stopping movement when appropriate
 				print("[AI] Entity", entityId, "disabled - no players in activation zone")
 			end
 			continue
 		end
 		
-		-- Process based on current state
+		-- STEP 2: STATE PROCESSING
 		if currentState == AI_STATES.CHASE then
-			-- Chase state processing
+			-- CHASE STATE: Check if target is still in detection range
 			local shouldUpdate = AISystem._shouldUpdateEntity(entityId, enemyAI, currentTime)
 			if shouldUpdate then
 				local closestPlayer, closestDistance = AISystem._findClosestPlayer(currentPosition)
 				
-				-- Check if target is still valid
-				if enemyAI.target and not isValidPlayer(enemyAI.target) then
+				-- Check if target is still valid and in detection range
+				if not closestPlayer or closestDistance > enemyAI.detectionRange then
+					-- Target out of range - go back to idle
+					AISystem._setState(entityId, enemyAI, AI_STATES.IDLE)
 					enemyAI.target = nil
-					print("[AI] Entity", entityId, "target became invalid, clearing")
+					print("[AI] Entity", entityId, "target out of range, returning to idle")
+				else
+					-- Target in range - call chase handler service
+					AISystem._callChaseHandler(entityId, enemyAI, model, closestPlayer, currentTime)
 				end
 				
-				-- Update chase logic
-				AISystem._updateEntityAI(entityId, enemyAI, model, currentTime, closestPlayer, closestDistance)
+				enemyAI.lastUpdateTime = currentTime
+				EntityManager.addComponent(entityId, "EnemyAI", enemyAI)
 				entitiesProcessed = entitiesProcessed + 1
-				
-				-- MovementSystem.update() handles movement independently at 60 FPS
 			end
 		else
-			-- In idle/patrol state - check for zone transitions
-			local isPlayerInZone = false
-			
-			for _, player in pairs(Players:GetPlayers()) do
-				if isValidPlayer(player) then
-					local distance = getPlayerDistance(player, currentPosition)
-					if distance <= CONFIG.DETECTION_RANGE then
-						isPlayerInZone = true
-						AISystem._setState(entityId, enemyAI, AI_STATES.CHASE)
-						enemyAI.target = player
-						print("[AI] Entity", entityId, "triggered chase - player entered zone")
-						break
-					end
-				end
-			end
-			
-			-- Handle idle/patrol logic if no players in zone
-			if not isPlayerInZone then
-				if currentState == AI_STATES.IDLE then
-					local shouldUpdate = AISystem._shouldUpdateEntity(entityId, enemyAI, currentTime)
-					if shouldUpdate then
-						-- Idle state now waits for animation completion signal
-						-- No automatic transition to patrol
-						AISystem._updateEntityAI(entityId, enemyAI, model, currentTime, nil, math.huge)
-						entitiesProcessed = entitiesProcessed + 1
-					end
-				elseif currentState == AI_STATES.PATROL then
-					local shouldUpdate = AISystem._shouldUpdateEntity(entityId, enemyAI, currentTime)
-					if shouldUpdate then
-						local stateTime = currentTime - (enemyAI.stateStartTime or currentTime)
-						if stateTime >= CONFIG.PATROL_TIME then
-							AISystem._setState(entityId, enemyAI, AI_STATES.IDLE)
-							enemyAI.target = nil
-							print("[AI] Entity", entityId, "cleared target (patrol->idle)")
-							EntityManager.addComponent(entityId, "EnemyAI", enemyAI)
+			-- IDLE/PATROL STATE: Check for players entering detection range
+			local shouldUpdate = AISystem._shouldUpdateEntity(entityId, enemyAI, currentTime)
+			if shouldUpdate then
+				local closestPlayer, closestDistance = AISystem._findClosestPlayer(currentPosition)
+				
+				-- Check if any player is in detection range
+				if closestPlayer and closestDistance <= enemyAI.detectionRange then
+					-- Player in range - start chase
+					AISystem._setState(entityId, enemyAI, AI_STATES.CHASE)
+					enemyAI.target = closestPlayer.player
+					print("[AI] Entity", entityId, "triggered chase - player entered detection range (range:", enemyAI.detectionRange, "distance:", math.floor(closestDistance), ")")
+					
+					-- Immediately call chase handler
+					AISystem._callChaseHandler(entityId, enemyAI, model, closestPlayer, currentTime)
+				else
+					-- No players in range - handle idle/patrol logic
+					local success, error = pcall(function()
+						if currentState == AI_STATES.IDLE then
+							AISystem._handleIdleState(entityId, enemyAI, model, currentTime)
+						elseif currentState == AI_STATES.PATROL then
+							AISystem._handlePatrolState(entityId, enemyAI, model, currentTime)
+						elseif currentState == AI_STATES.TALKING then
+							AISystem._handleTalkingState(entityId, enemyAI, model, currentTime)
 						end
-						entitiesProcessed = entitiesProcessed + 1
+					end)
+					
+					if not success then
+						warn("Error in state handling for entity", entityId, ":", error)
 					end
 				end
+				
+				enemyAI.lastUpdateTime = currentTime
+				EntityManager.addComponent(entityId, "EnemyAI", enemyAI)
+				entitiesProcessed = entitiesProcessed + 1
 			end
 		end
+	end
+	
+	-- Perform maintenance every 30 seconds
+	if currentTime % 30 < CONFIG.UPDATE_INTERVAL_IDLE then
+		MovementSystem.performMaintenance()
 	end
 end
 

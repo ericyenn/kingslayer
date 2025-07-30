@@ -1,7 +1,6 @@
 -- EnemyAnimationSystem.luau
 -- Client-side animation system for enemies
--- Purely visual system that sets up animations when enemies are spawned
--- No server communication or functionality changes required
+-- Simple direct call system - no RemoteEvents needed
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
@@ -20,7 +19,7 @@ local lastCleanupTime = 0
 local animatedEnemyCount = 0
 
 -- Animation transition settings
-local TRANSITION_DURATION = 0.3 -- Duration of crossfade in seconds
+-- Transition duration removed - animations now change instantly
 local MIN_WEIGHT = 0.0 -- Minimum weight for animations
 local MAX_WEIGHT = 1.0 -- Maximum weight for animations
 
@@ -28,31 +27,28 @@ local MAX_WEIGHT = 1.0 -- Maximum weight for animations
 function EnemyAnimationSystem.Initialize()
     print("🎭 EnemyAnimationSystem: Initializing client-side animation system")
     
-    -- Set up RemoteEvent listener for enemy animations
+    -- Set up simple RemoteEvent listener for AI state updates
     local RemoteEvents = require(ReplicatedStorage.Shared.RemoteEvents)
-    if RemoteEvents.SetupEnemyAnimations then
-        RemoteEvents.SetupEnemyAnimations.OnClientEvent:Connect(function(enemyModel, entityId)
-            print("🎭 EnemyAnimationSystem: Received animation setup request for enemy:", enemyModel.Name, "entity ID:", entityId)
-            EnemyAnimationSystem.SetupEnemyAnimations(enemyModel, entityId)
-        end)
-        print("✅ EnemyAnimationSystem: Connected to SetupEnemyAnimations RemoteEvent")
-    else
-        print("⚠️ EnemyAnimationSystem: SetupEnemyAnimations RemoteEvent not found")
-    end
-    
-    -- Set up AI state update listener
     if RemoteEvents.EnemyAIStateUpdate then
         RemoteEvents.EnemyAIStateUpdate.OnClientEvent:Connect(function(enemyModel, entityId, newState)
-            print("🎭 EnemyAnimationSystem: Received AI state update for enemy:", enemyModel.Name, "entity ID:", entityId, "state:", newState)
             EnemyAnimationSystem.UpdateEnemyAIState(enemyModel, entityId, newState)
         end)
-        print("✅ EnemyAnimationSystem: Connected to EnemyAIStateUpdate RemoteEvent")
-    else
-        print("⚠️ EnemyAnimationSystem: EnemyAIStateUpdate RemoteEvent not found")
+        print("✅ EnemyAnimationSystem: Connected to AI state updates")
+    end
+    
+    -- Set up simple RemoteEvent listener for animation setup
+    if RemoteEvents.SetupEnemyAnimations then
+        RemoteEvents.SetupEnemyAnimations.OnClientEvent:Connect(function(enemyModel, entityId)
+            EnemyAnimationSystem.SetupEnemyAnimations(enemyModel, entityId)
+        end)
+        print("✅ EnemyAnimationSystem: Connected to animation setup")
     end
     
     -- Set up cleanup loop
     RunService.Heartbeat:Connect(EnemyAnimationSystem._update)
+    
+    -- Make system globally accessible for direct calls
+    _G.EnemyAnimationSystem = EnemyAnimationSystem
     
     print("✅ EnemyAnimationSystem: Initialized successfully")
 end
@@ -63,41 +59,15 @@ function EnemyAnimationSystem._selectWeightedRandomIdleAnimation(availableAnimat
         return nil
     end
     
-    -- Adjust weights based on recently played animations
-    local adjustedAnimations = {}
-    local currentTime = tick()
-    local decayFactor = EnemyAnimationConfig.IDLE_SETTINGS.WEIGHT_DECAY_FACTOR
-    local decayWindow = EnemyAnimationConfig.IDLE_SETTINGS.WEIGHT_DECAY_WINDOW
-    
-    for i, animation in ipairs(availableAnimations) do
-        local lastPlayed = lastPlayedTimes[i] or 0
-        local timeSinceLastPlayed = currentTime - lastPlayed
-        
-        -- Reduce weight if animation was played recently
-        local adjustedWeight = animation.weight or 1
-        if timeSinceLastPlayed < decayWindow then
-            local decayMultiplier = 1 - (decayFactor * (1 - timeSinceLastPlayed / decayWindow))
-            adjustedWeight = adjustedWeight * decayMultiplier
-        end
-        
-        table.insert(adjustedAnimations, {
-            animation = animation,
-            weight = adjustedWeight
-        })
-    end
-    
     -- Calculate total weight
     local totalWeight = 0
-    for _, item in ipairs(adjustedAnimations) do
-        totalWeight = totalWeight + item.weight
+    for _, animation in ipairs(availableAnimations) do
+        totalWeight = totalWeight + (animation.weight or 1)
     end
     
     if totalWeight <= 0 then
         -- Fallback to equal weights
-        for _, item in ipairs(adjustedAnimations) do
-            item.weight = 1
-        end
-        totalWeight = #adjustedAnimations
+        totalWeight = #availableAnimations
     end
     
     -- Generate random value
@@ -105,15 +75,15 @@ function EnemyAnimationSystem._selectWeightedRandomIdleAnimation(availableAnimat
     
     -- Select animation based on weight
     local currentWeight = 0
-    for _, item in ipairs(adjustedAnimations) do
-        currentWeight = currentWeight + item.weight
+    for _, animation in ipairs(availableAnimations) do
+        currentWeight = currentWeight + (animation.weight or 1)
         if randomValue <= currentWeight then
-            return item.animation, adjustedAnimations
+            return animation
         end
     end
     
     -- Fallback to first animation
-    return adjustedAnimations[1].animation, adjustedAnimations
+    return availableAnimations[1]
 end
 
 -- Set up animations for a specific enemy (called when enemy is spawned)
@@ -211,6 +181,12 @@ function EnemyAnimationSystem.SetupEnemyAnimations(enemyModel, entityId)
                     tracks[state].Looped = (state == "walk")
                     tracks[state].Priority = Enum.AnimationPriority.Movement
                     
+                    -- Special handling for talk animation
+                    if state == "talk" then
+                        tracks[state].Looped = true -- Talk animation should loop
+                        tracks[state].Priority = Enum.AnimationPriority.Action -- Higher priority than movement
+                    end
+                    
                     print("🎭 EnemyAnimationSystem: Loaded", state, "animation track successfully")
                 else
                     print("❌ EnemyAnimationSystem: Failed to load", state, "animation:", result)
@@ -269,14 +245,7 @@ function EnemyAnimationSystem.SetupEnemyAnimations(enemyModel, entityId)
         entityId = entityId, -- Store the entity ID
         backgroundIdleTrack1 = backgroundIdleTrack1,
         backgroundIdleTrack2 = backgroundIdleTrack2,
-        transitionData = {
-            isTransitioning = false,
-            startTime = 0,
-            fromState = nil,
-            toState = nil,
-            fromWeight = 0,
-            toWeight = 0
-        },
+        -- Transition data removed - animations now change instantly
         aiState = "idle" -- Initialize AI state
     }
     
@@ -306,88 +275,70 @@ function EnemyAnimationSystem._playRandomIdleAnimation(enemyModel)
         return
     end
     
-    -- Stop current idle animation if playing
-    if animationData.currentIdleAnimation and animationData.currentIdleAnimation.track.IsPlaying then
-        animationData.currentIdleAnimation.track:Stop()
-    end
+    -- Check if we should play a new idle animation (continuous playing during idle state)
+    local currentTime = tick()
+    local shouldPlayNewAnimation = false
     
-    -- Select random idle animation
-    local selectedAnimation, adjustedAnimations = EnemyAnimationSystem._selectWeightedRandomIdleAnimation(
-        animationData.idleAnimations, 
-        animationData.lastIdlePlayedTimes
-    )
-    
-    if selectedAnimation then
-        -- Play the selected animation
-        selectedAnimation.track:Play()
-        animationData.currentIdleAnimation = selectedAnimation
-        animationData.idleAnimationStartTime = tick()
-        
-        -- Update last played time
-        animationData.lastIdlePlayedTimes[selectedAnimation.index] = tick()
-        
-        print("🎭 EnemyAnimationSystem: Playing idle animation", selectedAnimation.index, "for enemy:", enemyModel.Name)
-        
-        -- Set up completion detection
-        EnemyAnimationSystem._setupIdleAnimationCompletion(enemyModel, selectedAnimation)
+    -- If no current animation is playing, start a new one
+    if not animationData.currentIdleAnimation or not animationData.currentIdleAnimation.track.IsPlaying then
+        shouldPlayNewAnimation = true
     else
-        print("⚠️ EnemyAnimationSystem: No idle animation selected for enemy:", enemyModel.Name)
-    end
-end
-
--- Set up idle animation completion detection
-function EnemyAnimationSystem._setupIdleAnimationCompletion(enemyModel, idleAnimation)
-    local animationData = enemyAnimations[enemyModel]
-    if not animationData then return end
-    
-    -- Calculate animation duration
-    local duration = idleAnimation.duration
-    local actualDuration = math.random(duration[1], duration[2])
-    
-    print("🎭 EnemyAnimationSystem: Setting up completion for", enemyModel.Name, "duration:", actualDuration, "seconds")
-    
-    -- Set up completion timer
-    local startTime = tick()
-    local connection
-    
-    connection = RunService.Heartbeat:Connect(function()
-        local currentTime = tick()
-        local elapsed = currentTime - startTime
+        -- If current animation has been playing for a while, consider playing a new one
+        local animationStartTime = animationData.idleAnimationStartTime or currentTime
+        local animationElapsed = currentTime - animationStartTime
         
-        if elapsed >= actualDuration then
-            -- Animation completed, notify AI system
-            print("🎭 EnemyAnimationSystem: Animation duration completed for", enemyModel.Name, "elapsed:", elapsed, "seconds")
-            EnemyAnimationSystem._onIdleAnimationComplete(enemyModel)
-            connection:Disconnect()
+        -- Get the duration of the current animation
+        local currentAnimation = animationData.currentIdleAnimation
+        if currentAnimation and currentAnimation.duration then
+            local minDuration = currentAnimation.duration[1] or 2.0
+            local maxDuration = currentAnimation.duration[2] or 4.0
+            local avgDuration = (minDuration + maxDuration) / 2
+            
+            -- If animation has been playing longer than average duration, play a new one
+            if animationElapsed >= avgDuration then
+                shouldPlayNewAnimation = true
+            end
         end
-    end)
+    end
+    
+    if shouldPlayNewAnimation then
+        -- Stop current idle animation if playing
+        if animationData.currentIdleAnimation and animationData.currentIdleAnimation.track.IsPlaying then
+            animationData.currentIdleAnimation.track:Stop()
+        end
+        
+        -- Select random idle animation
+        local selectedAnimation = EnemyAnimationSystem._selectWeightedRandomIdleAnimation(
+            animationData.idleAnimations, 
+            animationData.lastIdlePlayedTimes
+        )
+        
+        if selectedAnimation then
+            -- Play the selected animation
+            selectedAnimation.track:Play()
+            animationData.currentIdleAnimation = selectedAnimation
+            animationData.idleAnimationStartTime = currentTime
+            
+            -- Update last played time
+            animationData.lastIdlePlayedTimes[selectedAnimation.index] = currentTime
+            
+            print("🎭 EnemyAnimationSystem: Playing idle animation", selectedAnimation.index, "for enemy:", enemyModel.Name)
+        else
+            print("⚠️ EnemyAnimationSystem: No idle animation selected for enemy:", enemyModel.Name)
+        end
+    end
 end
 
--- Handle idle animation completion
+-- Set up idle animation completion detection (REMOVED - Animation system is purely reactive)
+function EnemyAnimationSystem._setupIdleAnimationCompletion(enemyModel, idleAnimation)
+    -- No longer needed - animation system is purely reactive
+end
+
+-- Handle idle animation completion (REMOVED - Animation system is now purely reactive)
 function EnemyAnimationSystem._onIdleAnimationComplete(enemyModel)
-    local animationData = enemyAnimations[enemyModel]
-    if not animationData then 
-        print("⚠️ EnemyAnimationSystem: No animation data found for enemy:", enemyModel.Name)
-        return 
-    end
-    
-    -- Only notify server if enemy is still in idle state
-    if animationData.aiState ~= "idle" then
-        print("🎭 EnemyAnimationSystem: Ignoring idle animation completion for", enemyModel.Name, "- AI state is", animationData.aiState)
-        return
-    end
-    
-    print("🎭 EnemyAnimationSystem: Idle animation completed for enemy:", enemyModel.Name)
-    
-    -- Notify AI system via RemoteEvent with entity ID
-    local RemoteEvents = require(ReplicatedStorage.Shared.RemoteEvents)
-    if RemoteEvents.IdleAnimationComplete then
-        print("🎭 EnemyAnimationSystem: Firing IdleAnimationComplete RemoteEvent for enemy:", enemyModel.Name, "entity ID:", animationData.entityId)
-        RemoteEvents.IdleAnimationComplete:FireServer(enemyModel, animationData.entityId)
-        print("🎭 EnemyAnimationSystem: Successfully fired IdleAnimationComplete RemoteEvent")
-    else
-        print("⚠️ EnemyAnimationSystem: IdleAnimationComplete RemoteEvent not found")
-    end
+    -- Animation system no longer triggers state changes
+    -- AISystem controls all state transitions
+    print("🎭 EnemyAnimationSystem: Idle animation completed for", enemyModel.Name, "- no state change triggered")
 end
 
 -- Connect to humanoid events for animation state detection
@@ -423,198 +374,68 @@ function EnemyAnimationSystem._updateEnemyAnimation(enemyModel)
         newState = "walk"
     elseif animationData.aiState == "chase" then
         newState = "walk"
-    end
-    
-    -- Check for attack state (simplified detection)
-    local currentTime = tick()
-    if EnemyAnimationSystem._isEnemyAttacking(enemyModel) then
-        if currentTime - animationData.lastAttackTime > EnemyAnimationConfig.SETTINGS.ATTACK_COOLDOWN then
-            newState = "attack"
-            animationData.lastAttackTime = currentTime
-        end
+    elseif animationData.aiState == "talking" then
+        newState = "talk"
     end
     
     -- Only change animation if state actually changed
     if newState ~= currentState then
         print("🔄 EnemyAnimationSystem: State change for", enemyModel.Name, "from", currentState, "to", newState, "AI state:", animationData.aiState)
+        
+        -- Stop idle animations when entering talking state
+        if newState == "talk" and animationData.currentIdleAnimation and animationData.currentIdleAnimation.track.IsPlaying then
+            print("🎭 EnemyAnimationSystem: Stopping idle animation for talking state")
+            animationData.currentIdleAnimation.track:Stop()
+            animationData.currentIdleAnimation = nil
+        end
+        
         EnemyAnimationSystem._changeAnimation(enemyModel, newState)
     end
 end
 
--- Simple attack detection (based on proximity to players)
-function EnemyAnimationSystem._isEnemyAttacking(enemyModel)
-    local humanoid = enemyModel:FindFirstChild("Humanoid")
-    if not humanoid then return false end
-    
-    local enemyPosition = humanoid.RootPart and humanoid.RootPart.Position or enemyModel:GetPivot().Position
-    
-    -- Check if any player is within attack range
-    for _, player in ipairs(Players:GetPlayers()) do
-        if player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
-            local distance = (enemyPosition - player.Character.HumanoidRootPart.Position).Magnitude
-            if distance <= EnemyAnimationConfig.SETTINGS.ATTACK_DETECTION_RANGE then
-                return true
-            end
-        end
-    end
-    
-    return false
-end
+-- Transition functions removed - animations now change instantly
 
--- Start smooth animation transition
-function EnemyAnimationSystem._startTransition(enemyModel, fromState, toState)
-    local animationData = enemyAnimations[enemyModel]
-    if not animationData then return end
-    
-    local transitionData = animationData.transitionData
-    local currentTime = tick()
-    
-    print("🔄 EnemyAnimationSystem: Starting transition for", enemyModel.Name, "from", fromState, "to", toState)
-    
-    -- Set up transition data
-    transitionData.isTransitioning = true
-    transitionData.startTime = currentTime
-    transitionData.fromState = fromState
-    transitionData.toState = toState
-    transitionData.fromWeight = MAX_WEIGHT
-    transitionData.toWeight = MIN_WEIGHT
-    
-    -- Start the target animation if not already playing
-    if toState == "idle" then
-        -- For idle, we'll handle this in the transition update
-        -- Only play idle if AI state allows it
-        if animationData.aiState == "idle" then
-            EnemyAnimationSystem._playRandomIdleAnimation(enemyModel)
-        end
-    elseif animationData.tracks[toState] and not animationData.tracks[toState].IsPlaying then
-        animationData.tracks[toState]:Play()
-    end
-    
-    -- If transitioning away from idle, ensure idle animation is stopped
-    if fromState == "idle" and toState ~= "idle" then
-        if animationData.currentIdleAnimation and animationData.currentIdleAnimation.track.IsPlaying then
-            print("🎭 EnemyAnimationSystem: Stopping idle animation during transition for", enemyModel.Name)
-            animationData.currentIdleAnimation.track:Stop()
-            animationData.currentIdleAnimation = nil
-        end
-    end
-    
-    -- Set initial weights
-    EnemyAnimationSystem._updateTransitionWeights(enemyModel)
-end
-
--- Update transition weights during crossfade
-function EnemyAnimationSystem._updateTransitionWeights(enemyModel)
-    local animationData = enemyAnimations[enemyModel]
-    if not animationData then return end
-    
-    local transitionData = animationData.transitionData
-    if not transitionData.isTransitioning then return end
-    
-    local currentTime = tick()
-    local elapsed = currentTime - transitionData.startTime
-    local progress = math.clamp(elapsed / TRANSITION_DURATION, 0, 1)
-    
-    -- Calculate weights using smooth easing
-    local fromWeight = MAX_WEIGHT * (1 - progress)
-    local toWeight = MAX_WEIGHT * progress
-    
-    -- Apply weights to animations
-    if transitionData.fromState == "idle" and animationData.currentIdleAnimation then
-        animationData.currentIdleAnimation.track:AdjustWeight(fromWeight)
-    elseif animationData.tracks[transitionData.fromState] then
-        animationData.tracks[transitionData.fromState]:AdjustWeight(fromWeight)
-    end
-    
-    if transitionData.toState == "idle" and animationData.currentIdleAnimation then
-        animationData.currentIdleAnimation.track:AdjustWeight(toWeight)
-    elseif animationData.tracks[transitionData.toState] then
-        animationData.tracks[transitionData.toState]:AdjustWeight(toWeight)
-    end
-    
-    -- Check if transition is complete
-    if progress >= 1.0 then
-        EnemyAnimationSystem._completeTransition(enemyModel)
-    end
-end
-
--- Complete the transition
-function EnemyAnimationSystem._completeTransition(enemyModel)
-    local animationData = enemyAnimations[enemyModel]
-    if not animationData then return end
-    
-    local transitionData = animationData.transitionData
-    if not transitionData.isTransitioning then return end
-    
-    print("✅ EnemyAnimationSystem: Completed transition for", enemyModel.Name, "to", transitionData.toState)
-    
-    -- Stop the old animation
-    if transitionData.fromState == "idle" and animationData.currentIdleAnimation then
-        animationData.currentIdleAnimation.track:Stop()
-        animationData.currentIdleAnimation = nil
-    elseif animationData.tracks[transitionData.fromState] then
-        animationData.tracks[transitionData.fromState]:Stop()
-    end
-    
-    -- Set final weights
-    if transitionData.toState == "idle" and animationData.currentIdleAnimation then
-        animationData.currentIdleAnimation.track:AdjustWeight(MAX_WEIGHT)
-    elseif animationData.tracks[transitionData.toState] then
-        animationData.tracks[transitionData.toState]:AdjustWeight(MAX_WEIGHT)
-    end
-    
-    -- Update current state
-    animationData.currentState = transitionData.toState
-    
-    -- Reset transition data
-    transitionData.isTransitioning = false
-    transitionData.fromState = nil
-    transitionData.toState = nil
-    transitionData.fromWeight = 0
-    transitionData.toWeight = 0
-end
-
--- Change animation state with smooth transition
+-- Change animation state instantly (no crossfade)
 function EnemyAnimationSystem._changeAnimation(enemyModel, newState)
     local animationData = enemyAnimations[enemyModel]
     if not animationData then return end
     
     local currentState = animationData.currentState
-    local transitionData = animationData.transitionData
     
     print("🎭 EnemyAnimationSystem: Changing animation for", enemyModel.Name, "from", currentState, "to", newState)
     
-    -- If already transitioning, complete the current transition first
-    if transitionData.isTransitioning then
-        EnemyAnimationSystem._completeTransition(enemyModel)
+    -- Stop all current animations immediately
+    for _, track in pairs(animationData.tracks) do
+        if track.IsPlaying then
+            track:Stop()
+        end
     end
     
-    -- If transitioning away from idle, immediately stop idle animation
+    -- Stop idle animations if transitioning away from idle
     if currentState == "idle" and newState ~= "idle" then
         if animationData.currentIdleAnimation and animationData.currentIdleAnimation.track.IsPlaying then
-            print("🎭 EnemyAnimationSystem: Immediately stopping idle animation for", enemyModel.Name)
+            print("🎭 EnemyAnimationSystem: Stopping idle animation for", enemyModel.Name)
             animationData.currentIdleAnimation.track:Stop()
             animationData.currentIdleAnimation = nil
         end
     end
     
-    -- Handle idle state specially - play idle animation immediately
+    -- Handle idle state specially
     if newState == "idle" then
-        -- Stop any current animations
-        for _, track in pairs(animationData.tracks) do
-            if track.IsPlaying then
-                track:Stop()
-            end
-        end
-        
         -- Play idle animation immediately
         EnemyAnimationSystem._playRandomIdleAnimation(enemyModel)
-        animationData.currentState = newState
-        return
+    else
+        -- Play the new animation immediately
+        if animationData.tracks[newState] then
+            animationData.tracks[newState]:Play()
+            print("🎭 EnemyAnimationSystem: Started", newState, "animation for", enemyModel.Name)
+        else
+            print("⚠️ EnemyAnimationSystem: No", newState, "animation track found for", enemyModel.Name)
+        end
     end
     
-    -- For non-idle states, use the transition system
-    EnemyAnimationSystem._startTransition(enemyModel, currentState, newState)
+    -- Update current state immediately
+    animationData.currentState = newState
 end
 
 -- Update enemy AI state
@@ -680,16 +501,9 @@ function EnemyAnimationSystem.CleanupEnemyAnimations(enemyModel)
     print("✅ EnemyAnimationSystem: Cleaned up animations for enemy:", enemyModel.Name)
 end
 
--- Update function for cleanup and transition updates
+-- Update function for cleanup (no more transitions)
 function EnemyAnimationSystem._update()
     local currentTime = tick()
-    
-    -- Update ongoing transitions
-    for enemyModel, animationData in pairs(enemyAnimations) do
-        if animationData.transitionData.isTransitioning then
-            EnemyAnimationSystem._updateTransitionWeights(enemyModel)
-        end
-    end
     
     -- Clean up destroyed enemies periodically
     if currentTime - lastCleanupTime > EnemyAnimationConfig.SETTINGS.CLEANUP_INTERVAL then
