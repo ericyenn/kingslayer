@@ -47,9 +47,11 @@ if RunService:IsServer() then
     local closeTraderShopRemote = createRemoteEvent("CloseTraderShop")
     local tradeRequestRemote = createRemoteFunction("TradeRequest")
     local updateInventoryRemote = createRemoteEvent("UpdateInventory")
+    local traderLevelUpdatedRemote = createRemoteEvent("TraderLevelUpdated")
     
     -- Server: Create damage system RemoteEvents
     local applyDamageRemote = createRemoteEvent("ApplyDamage")
+    local applyBreakableDamageRemote = createRemoteEvent("ApplyBreakableDamage")
     
     -- Server: Create item consumption RemoteEvents
     local consumeItemRequestRemote = createRemoteEvent("ConsumeItemRequest")
@@ -100,9 +102,11 @@ if RunService:IsServer() then
     RemoteEvents.CloseTraderShop = closeTraderShopRemote
     RemoteEvents.TradeRequest = tradeRequestRemote
     RemoteEvents.UpdateInventory = updateInventoryRemote
+    RemoteEvents.TraderLevelUpdated = traderLevelUpdatedRemote
     
     -- Damage system remotes
     RemoteEvents.ApplyDamage = applyDamageRemote
+    RemoteEvents.ApplyBreakableDamage = applyBreakableDamageRemote
     
     -- Item consumption remotes
     RemoteEvents.ConsumeItemRequest = consumeItemRequestRemote
@@ -145,9 +149,11 @@ else
     local closeTraderShopRemote = ReplicatedStorage:WaitForChild("CloseTraderShop")
     local tradeRequestRemote = ReplicatedStorage:WaitForChild("TradeRequest")
     local updateInventoryRemote = ReplicatedStorage:WaitForChild("UpdateInventory")
+    local traderLevelUpdatedRemote = ReplicatedStorage:WaitForChild("TraderLevelUpdated")
     
     -- Client: Wait for damage system RemoteEvents
     local applyDamageRemote = ReplicatedStorage:WaitForChild("ApplyDamage")
+    local applyBreakableDamageRemote = ReplicatedStorage:WaitForChild("ApplyBreakableDamage")
     
     -- Client: Wait for item consumption RemoteEvents
     local consumeItemRequestRemote = ReplicatedStorage:WaitForChild("ConsumeItemRequest")
@@ -198,9 +204,11 @@ else
     RemoteEvents.CloseTraderShop = closeTraderShopRemote
     RemoteEvents.TradeRequest = tradeRequestRemote
     RemoteEvents.UpdateInventory = updateInventoryRemote
+    RemoteEvents.TraderLevelUpdated = traderLevelUpdatedRemote
     
     -- Damage system remotes
     RemoteEvents.ApplyDamage = applyDamageRemote
+    RemoteEvents.ApplyBreakableDamage = applyBreakableDamageRemote
     
     -- Item consumption remotes
     RemoteEvents.ConsumeItemRequest = consumeItemRequestRemote

@@ -13,6 +13,7 @@ local Constants = require(ReplicatedStorage.Shared.Constants)
 local Draggable = require(ReplicatedStorage.Shared.Components.Draggable)
 local Hoverable = require(ReplicatedStorage.Shared.Components.Hoverable)
 local Inventoryable = require(ReplicatedStorage.Shared.Components.Inventoryable)
+local ItemIdentity = require(ReplicatedStorage.Shared.Components.ItemIdentity)
 
 local processedItems = {}
 
@@ -77,6 +78,20 @@ function ItemSetupSystem:AddComponentsToItem(item, componentConfigs)
             warn("Failed to create component:", componentName)
         end
     end
+    
+    -- ALWAYS add ItemIdentity component on client side too
+    local itemDefinition = self:FindItemDefinitionByName(item.Name)
+    if itemDefinition then
+        local identityComponent = ItemIdentity.new({
+            itemId = itemDefinition.id or item.Name, -- Fallback to name if no id
+            itemName = itemDefinition.name,
+            category = itemDefinition.category,
+            rarity = itemDefinition.rarity or "common",
+            level = itemDefinition.level or 1
+        })
+        ECS:AddComponent(item, "ItemIdentity", identityComponent)
+        print("Added ItemIdentity component to", item.Name, "on client")
+    end
 end
 
 function ItemSetupSystem:CreateComponent(componentName, config)
@@ -86,6 +101,8 @@ function ItemSetupSystem:CreateComponent(componentName, config)
         return Hoverable.new(config)
     elseif componentName == "Inventoryable" then
         return Inventoryable.new(config)
+    elseif componentName == "ItemIdentity" then
+        return ItemIdentity.new(config)
     else
         warn("Unknown component type:", componentName)
         return nil

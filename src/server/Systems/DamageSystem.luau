@@ -12,7 +12,7 @@ local Categories = require(ReplicatedStorage.Shared.ItemCategory)
 -- Anti-cheat configuration
 local DAMAGE_CONFIG = {
     MAX_DAMAGE_DISTANCE = 10, -- Maximum distance player can be from target
-    DAMAGE_COOLDOWN = 0.1, -- Minimum time between damage applications per player
+    DEFAULT_COOLDOWN = 0.1, -- Default cooldown if item doesn't specify one
     MAX_DAMAGE_PER_HIT = 50, -- Maximum damage that can be applied in one hit
 }
 
@@ -46,10 +46,27 @@ function DamageSystem:ProcessDamageRequest(player, targetPart, weaponName, damag
         return
     end
     
-    -- Anti-cheat: Check cooldown
+    -- Get the equipped tool to determine cooldown
+    local character = player.Character
+    local equippedTool = character and character:FindFirstChildOfClass("Tool")
+    if not equippedTool then
+        warn("DamageSystem: Player has no tool equipped")
+        return
+    end
+    
+    -- Get item definition to determine cooldown
+    local itemKey = string.lower(equippedTool.Name)
+    local itemDef = ItemDefinitions:GetItem(itemKey)
+    local cooldown = DAMAGE_CONFIG.DEFAULT_COOLDOWN -- Default fallback
+    
+    if itemDef and itemDef.actionData and itemDef.actionData.cooldown then
+        cooldown = itemDef.actionData.cooldown
+    end
+    
+    -- Anti-cheat: Check cooldown using item-specific cooldown
     local currentTime = tick()
-    if lastDamageTime[player] and (currentTime - lastDamageTime[player]) < DAMAGE_CONFIG.DAMAGE_COOLDOWN then
-        warn("DamageSystem: Player", player.Name, "is attacking too fast (cooldown)")
+    if lastDamageTime[player] and (currentTime - lastDamageTime[player]) < cooldown then
+        warn("DamageSystem: Player", player.Name, "is attacking too fast (cooldown:", cooldown, "s)")
         return
     end
     
@@ -236,7 +253,24 @@ end
 
 function DamageSystem:IsPlayerOnCooldown(player)
     if not lastDamageTime[player] then return false end
-    return (tick() - lastDamageTime[player]) < DAMAGE_CONFIG.DAMAGE_COOLDOWN
+    
+    -- Get the equipped tool to determine cooldown
+    local character = player.Character
+    local equippedTool = character and character:FindFirstChildOfClass("Tool")
+    if not equippedTool then
+        return false -- No tool equipped, not on cooldown
+    end
+    
+    -- Get item definition to determine cooldown
+    local itemKey = string.lower(equippedTool.Name)
+    local itemDef = ItemDefinitions:GetItem(itemKey)
+    local cooldown = DAMAGE_CONFIG.DEFAULT_COOLDOWN -- Default fallback
+    
+    if itemDef and itemDef.actionData and itemDef.actionData.cooldown then
+        cooldown = itemDef.actionData.cooldown
+    end
+    
+    return (tick() - lastDamageTime[player]) < cooldown
 end
 
 return DamageSystem 

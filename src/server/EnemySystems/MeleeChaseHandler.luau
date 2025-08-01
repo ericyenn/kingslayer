@@ -195,8 +195,16 @@ function MeleeChaseHandler._ensureAttackUpdateLoop()
         return -- Already running
     end
     
+    -- Use throttled update instead of every frame to prevent choppy movement
+    local lastUpdate = 0
+    local UPDATE_INTERVAL = 1/10 -- 10 FPS for attack updates
+    
     attackUpdateConnection = RunService.Heartbeat:Connect(function()
-        MeleeChaseHandler._updateActiveAttacks()
+        local currentTime = tick()
+        if currentTime - lastUpdate >= UPDATE_INTERVAL then
+            MeleeChaseHandler._updateActiveAttacks()
+            lastUpdate = currentTime
+        end
     end)
     
     print("🔄 Started melee attack update loop")

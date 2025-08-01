@@ -23,6 +23,7 @@ end
 ItemDefinitions.items = {
     -- TOOLS - All use generic attack action with different damage
     stick = {
+        id = "stick",
         name = "Cane",
         description = "Just a stick for walking. Not meant for combat, but will do.",
         model = "CaneModel",
@@ -50,6 +51,7 @@ ItemDefinitions.items = {
     },
     
     cutlass = {
+        id = "cutlass",
         name = "Cutlass",
         description = "A sharp curved sword. Effective weapon for combat.",
         model = "CutlassModel",
@@ -58,7 +60,8 @@ ItemDefinitions.items = {
         actionData = {
             damage = 15,
             chargeMultiplier = 2.0, -- Charged attack does 2x damage (30 total)
-            criticalMultiplier = 3.0 -- Critical attack does 3x damage (45 total)
+            criticalMultiplier = 3.0, -- Critical attack does 3x damage (45 total)
+            cooldown = 0.4 -- Attack cooldown in seconds
         },
         components = {
             Draggable = {
@@ -76,8 +79,72 @@ ItemDefinitions.items = {
         }
     },
     
+    -- BREAKABLE TOOLS
+    axe = {
+        id = "axe",
+        name = "Axe",
+        description = "A tool for chopping trees and wood.",
+        model = "AxeModel",
+        category = Categories.Tool,
+        actionType = ActionConstants.Tool.ATTACK,
+        actionData = {
+            damage = 20,
+            chargeMultiplier = 2.0,
+            criticalMultiplier = 3.0,
+            breakableDamage = 25, -- Special damage for breakable objects
+            cooldown = 0.8 -- Attack cooldown in seconds
+        },
+        components = {
+            Draggable = {
+                force = 12000,
+                maxDistance = 45,
+                dampening = 0.7
+            },
+            Hoverable = {
+                displayName = "Axe",
+                description = "A tool for chopping trees and wood."
+            },
+            Inventoryable = {
+                inventoryIcon = "🪓"
+            }
+        },
+        tags = {"Axe"} -- Tag for breakable system
+    },
+    
+    pickaxe = {
+        id = "pickaxe",
+        name = "Pickaxe",
+        description = "A tool for mining rocks and ore.",
+        model = "PickaxeModel",
+        category = Categories.Tool,
+        actionType = ActionConstants.Tool.ATTACK,
+        actionData = {
+            damage = 15,
+            chargeMultiplier = 2.0,
+            criticalMultiplier = 3.0,
+            breakableDamage = 30, -- Special damage for breakable objects
+            cooldown = 0.6 -- Attack cooldown in seconds
+        },
+        components = {
+            Draggable = {
+                force = 12000,
+                maxDistance = 45,
+                dampening = 0.7
+            },
+            Hoverable = {
+                displayName = "Pickaxe",
+                description = "A tool for mining rocks and ore."
+            },
+            Inventoryable = {
+                inventoryIcon = "⛏️"
+            }
+        },
+        tags = {"Pickaxe"} -- Tag for breakable system
+    },
+    
     -- ARMOR - No click functionality, gives health when equipped
     chestplate = {
+        id = "chestplate",
         name = "Chestplate",
         description = "Heavy armor that protects your torso and provides health.",
         model = "ChestplateModel",
@@ -107,6 +174,7 @@ ItemDefinitions.items = {
     
     -- FUNCTIONAL ITEMS - Placeholder for future customization
     healing_essence = {
+        id = "healing_essence",
         name = "Healing Essence",
         description = "A magical essence with healing properties. Use to restore health.",
         model = "HealingEssenceModel",
@@ -136,6 +204,7 @@ ItemDefinitions.items = {
     },
     
     summoner = {
+        id = "summoner",
         name = "Summoner",
         description = "A mysterious artifact with summoning powers. Single use item.",
         model = "SummonerModel",
@@ -165,6 +234,7 @@ ItemDefinitions.items = {
     },
     
     revive_plush = {
+        id = "revive_plush",
         name = "Revive Plush",
         description = "A magical plush toy that can bring players back to life. Use near a dead player to revive them.",
         model = "RevivePlushModel",
@@ -195,6 +265,7 @@ ItemDefinitions.items = {
     },
     
     philosophers_stone = {
+        id = "philosophers_stone",
         name = "Philosopher's Stone",
         description = "A legendary artifact with the power to transmute materials and grant eternal life. The ultimate reward for the most sacred of sacrifices.",
         model = "PhilosophersStoneModel",
@@ -225,6 +296,7 @@ ItemDefinitions.items = {
     
     -- ITEMS - No click actions, basic materials
     wood = {
+        id = "wood",
         name = "Wood",
         description = "Basic crafting material from trees. Essential for many recipes.",
         model = "WoodModel",
@@ -250,6 +322,7 @@ ItemDefinitions.items = {
     },
     
     stone = {
+        id = "stone",
         name = "Stone",
         description = "Solid rock material. Useful for construction and crafting.",
         model = "StoneModel",
@@ -257,9 +330,9 @@ ItemDefinitions.items = {
         -- No actionType - items have no click actions
         components = {
             Draggable = {
-                force = 8000,
-                maxDistance = 35,
-                dampening = 0.6
+                force = 6000,
+                maxDistance = 30,
+                dampening = 0.5
             },
             Hoverable = {
                 displayName = "Stone",
@@ -269,6 +342,85 @@ ItemDefinitions.items = {
             Inventoryable = {
                 stackable = false,
                 maxStack = 1,
+                canPickup = true
+            }
+        }
+    },
+    
+    -- BREAKABLE DROPS
+    log = {
+        id = "log",
+        name = "Log",
+        description = "A wooden log from a tree.",
+        model = "LogModel",
+        category = Categories.Item,
+        components = {
+            Draggable = {
+                force = 8000,
+                maxDistance = 35,
+                dampening = 0.6
+            },
+            Hoverable = {
+                displayName = "Log",
+                description = "A wooden log from a tree.",
+                highlightColor = Color3.fromRGB(139, 69, 19)
+            },
+            Inventoryable = {
+                inventoryIcon = "🪵",
+                stackable = true,
+                maxStack = 10,
+                canPickup = true
+            }
+        }
+    },
+    
+    rock = {
+        id = "rock",
+        name = "Rock",
+        description = "A solid rock from mining.",
+        model = "RockModel",
+        category = Categories.Item,
+        components = {
+            Draggable = {
+                force = 8000,
+                maxDistance = 35,
+                dampening = 0.6
+            },
+            Hoverable = {
+                displayName = "Rock",
+                description = "A solid rock from mining.",
+                highlightColor = Color3.fromRGB(128, 128, 128)
+            },
+            Inventoryable = {
+                inventoryIcon = "🪨",
+                stackable = true,
+                maxStack = 10,
+                canPickup = true
+            }
+        }
+    },
+    
+    crystal = {
+        id = "crystal",
+        name = "Crystal",
+        description = "A beautiful crystal with magical properties.",
+        model = "CrystalModel",
+        category = Categories.Item,
+        components = {
+            Draggable = {
+                force = 8000,
+                maxDistance = 35,
+                dampening = 0.6
+            },
+            Hoverable = {
+                displayName = "Crystal",
+                description = "A beautiful crystal with magical properties.",
+                highlightColor = Color3.fromRGB(138, 43, 226)
+            },
+            Inventoryable = {
+                inventoryIcon = "💎",
+                stackable = true,
+                maxStack = 5,
                 canPickup = true
             }
         }

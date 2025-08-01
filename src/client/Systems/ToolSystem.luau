@@ -7,6 +7,8 @@ local ActionConstants = require(ReplicatedStorage.Shared.ActionConstants)
 local SystemManager = require(ReplicatedStorage.Shared.SystemManager)
 local RemoteEvents = require(ReplicatedStorage.Shared.RemoteEvents)
 
+
+
 -- Create tool-specific action registry
 local toolRegistry = ActionRegistry.new("ToolSystem")
 
@@ -47,20 +49,106 @@ toolRegistry:RegisterAction(ActionConstants.Tool.ATTACK, function(player, itemDe
     if target then
         print("  - Attacking target:", target:GetFullName())
         
-        -- Play appropriate hit sound based on attack type
-        if _G.AudioSystem then
-            if isCritical then
-                -- Delay critical hit sound by 0.1 seconds after timing success
-                task.wait(0.1)
-                _G.AudioSystem:PlayCriticalHitSound()
+        -- Check if target is a breakable object (has "Breakable" tag)
+        local CollectionService = game:GetService("CollectionService")
+        local isBreakable = CollectionService:HasTag(target, "Breakable") or 
+                           (target.Parent and CollectionService:HasTag(target.Parent, "Breakable"))
+        
+        if isBreakable then
+            -- Get the equipped tool to validate compatibility
+            local character = player.Character
+            local equippedTool = character and character:FindFirstChildOfClass("Tool")
+            
+            -- Check if tool is correct for this breakable (TAG-BASED VALIDATION ONLY)
+            local isToolCorrect = false
+            if equippedTool then
+                -- Get the required tool type from the breakable's tag
+                local CollectionService = game:GetService("CollectionService")
+                local requiredTool = nil
+                
+                -- Check breakable type tags
+                if CollectionService:HasTag(target, "Rock") or (target.Parent and CollectionService:HasTag(target.Parent, "Rock")) then
+                    requiredTool = "pickaxe"
+                elseif CollectionService:HasTag(target, "Tree") or (target.Parent and CollectionService:HasTag(target.Parent, "Tree")) then
+                    requiredTool = "axe"
+                elseif CollectionService:HasTag(target, "Crystal") or (target.Parent and CollectionService:HasTag(target.Parent, "Crystal")) then
+                    requiredTool = "pickaxe"
+                end
+                
+                -- Debug logging
+                print("  - Breakable type detected:", requiredTool)
+                print("  - Equipped tool:", equippedTool.Name)
+                
+                -- Check if equipped tool has the correct tag
+                local toolTags = CollectionService:GetTags(equippedTool)
+                print("  - Tool tags:", table.concat(toolTags, ", "))
+                
+                if requiredTool == "axe" and CollectionService:HasTag(equippedTool, "Axe") then
+                    isToolCorrect = true
+                    print("  - Tool validation: Axe ✓")
+                elseif requiredTool == "pickaxe" and CollectionService:HasTag(equippedTool, "Pickaxe") then
+                    isToolCorrect = true
+                    print("  - Tool validation: Pickaxe ✓")
+                else
+                    print("  - Tool validation: ✗ (required:", requiredTool, ", has tags:", table.concat(toolTags, ", "), ")")
+                end
             else
-                _G.AudioSystem:PlayHitSuccessSound() -- Random hit success sound
+                print("  - No equipped tool found")
+            end
+            
+            if isToolCorrect then
+                -- Correct tool: play hit sound and send to server
+                if _G.AudioSystem then
+                    if isCritical then
+                        -- Delay critical hit sound by 0.1 seconds after timing success
+                        task.wait(0.1)
+                        _G.AudioSystem:PlayCriticalHitSound()
+                    else
+                        _G.AudioSystem:PlayHitSuccessSound()
+                    end
+                end
+                
+                -- Server will handle shake effect via remote event
+                
+                local breakableDamage = actionData.breakableDamage or finalDamage
+                RemoteEvents.ApplyBreakableDamage:FireServer(target, breakableDamage)
+                print("  - Correct tool, sent damage request to server")
+            else
+                -- Wrong tool: miss feedback, no server request
+                print("  - Wrong tool for this breakable")
+                if _G.AudioSystem then
+                    _G.AudioSystem:PlaySwingMissSound()
+                end
+                return -- Don't proceed with damage
+            end
+        else
+            -- Check if target is an enemy (has "Enemies" tag)
+            local isEnemy = CollectionService:HasTag(target, "Enemies") or 
+                           (target.Parent and CollectionService:HasTag(target.Parent, "Enemies"))
+            
+            if isEnemy then
+                -- Play hit sound for enemies
+                if _G.AudioSystem then
+                    if isCritical then
+                        -- Delay critical hit sound by 0.1 seconds after timing success
+                        task.wait(0.1)
+                        _G.AudioSystem:PlayCriticalHitSound()
+                    else
+                        _G.AudioSystem:PlayHitSuccessSound()
+                    end
+                end
+                
+                -- Send regular damage request to server for enemies
+                RemoteEvents.ApplyDamage:FireServer(target, weaponName, finalDamage)
+                print("  - Sent enemy damage request to server")
+            else
+                -- No valid target found - play miss sound
+                print("  - No valid target found (not breakable or enemy)")
+                if _G.AudioSystem then
+                    _G.AudioSystem:PlaySwingMissSound()
+                end
             end
         end
-        
-        -- Send damage request to server
-        RemoteEvents.ApplyDamage:FireServer(target, weaponName, finalDamage)
-        print("  - Sent damage request to server")
     else
         print("  - Swinging", weaponName, "in the air")
         
@@ -83,6 +171,8 @@ toolRegistry:SetDefaultAction(function(player, itemDef, target, actionData)
         print("  - Using", itemDef.name, "in general")
     end
 end)
+
+
 
 function ToolSystem:Initialize()
     SystemManager.RegisterSystem("ToolSystem", self)

@@ -24,8 +24,8 @@ DialogueData.NPCDialogues = {
 	
 	-- Trader NPC
 	trader = {
-		text = "Ah, a customer! I have rare goods to trade.\n\n• [Open Trading Post] - Let's make a deal\n• [Leave] - Perhaps another time",
-		actions = {"open_trade", "goodbye"}
+		text = "Ah, a customer! I have rare goods to trade.\n\n• [Open Trading Post] - Let's make a deal\n• [Upgrade] - Enhance your equipment\n• [Leave] - Perhaps another time",
+		actions = {"open_trade", "upgrade", "goodbye"}
 	},
 	
 	-- Regular NPC
@@ -59,6 +59,10 @@ DialogueData.ResponseDialogues = {
 	},
 	open_trade = {
 		text = "Choose your trades wisely! I have the finest goods in the realm!",
+		actions = {}
+	},
+	upgrade = {
+		text = "I can enhance your equipment with rare materials. What would you like to upgrade?",
 		actions = {}
 	},
 	tell_story = {

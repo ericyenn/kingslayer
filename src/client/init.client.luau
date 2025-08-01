@@ -176,6 +176,8 @@ local systemInitializationOrder = {
         maxRetries = 2
     },
     
+
+    
     -- UI components
     {
         name = "HealthBar",

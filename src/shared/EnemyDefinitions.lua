@@ -50,7 +50,7 @@ EnemyDefinitions.enemies = {
         -- Custom configuration overrides
         customConfig = {
             moveSpeed = 18, -- Faster than default melee
-            damage = 20,    -- Higher damage
+            damage = 1,    -- Higher damage
             attackSpeed = 2.2,
             detectionRange = 15,
             -- Idle movement settings
@@ -98,6 +98,42 @@ EnemyDefinitions.enemies = {
         
         health = 150,
         experience = 25
+    },
+    
+    night_dweller = {
+        name = "Night Dweller",
+        description = "A mysterious creature that lurks in the darkness with exceptional senses.",
+        model = "NightDwellerModel",
+        enemyType = "melee",
+        
+        -- Visual properties
+        color = Color3.fromRGB(20, 20, 40), -- Dark blue/black
+        size = Vector3.new(2.5, 4.5, 2.5),
+        material = Enum.Material.Neon,
+        
+        -- Custom configuration overrides
+        customConfig = {
+            moveSpeed = 16, -- Standard melee speed
+            damage = 25,    -- Moderate damage
+            attackSpeed = 2.0,
+            detectionRange = 60, -- Very long detection range as requested
+            -- Idle movement settings
+            idleMovementEnabled = true,
+            idleMovementRadius = 25,
+            idleMovementInterval = 5,
+            idleMovementSpeed = 8,
+        },
+        
+        -- Loot drops
+        loot = {
+            { item = "shadow_blade", chance = 0.4 },
+            { item = "dark_crystal", chance = 0.6 },
+            { item = "gold_coin", chance = 0.9 }
+        },
+        
+        -- Health and stats
+        health = 100,
+        experience = 30
     },
     
     -- RANGED ENEMIES

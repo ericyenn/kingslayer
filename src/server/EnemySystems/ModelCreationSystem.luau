@@ -4,6 +4,7 @@
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Workspace = game:GetService("Workspace")
+local CollectionService = game:GetService("CollectionService")
 
 -- Import custom ECS modules
 local EntityManager = require(ReplicatedStorage.Shared.EntityManager)
@@ -170,6 +171,9 @@ function ModelCreationSystem._createModelForEntity(entityId)
             part.CollisionGroup = "Enemies"
         end
     end
+    
+    -- Add Enemies tag to the model
+    CollectionService:AddTag(model, "Enemies")
 
     print("🎨 Created model '" .. modelName .. "' for", enemyType.enemyId, "entity", entityId, "at", groundPosition)
     
@@ -208,7 +212,6 @@ end
 
 -- Create model from ReplicatedStorage.EnemyModels using specific model name
 function ModelCreationSystem._createModelFromReplicatedStorage(modelName)
-	local ReplicatedStorage = game:GetService("ReplicatedStorage")
 	
 	-- Check if EnemyModels folder exists
 	local enemyModelsFolder = ReplicatedStorage:FindFirstChild("EnemyModels")
@@ -243,11 +246,11 @@ function ModelCreationSystem._findGroundPosition(spawnPosition)
 	local result = workspace:Raycast(rayOrigin, rayDirection, raycastParams)
 	
 	if result then
-		-- Position slightly above the ground (2 studs for humanoid height)
-		return result.Position + Vector3.new(0, 2, 0)
+		-- Position above the ground (4 studs for humanoid height to prevent ground clipping)
+		return result.Position + Vector3.new(0, 4, 0)
 	else
-		-- Fallback: use original position with small offset
-		return spawnPosition + Vector3.new(0, 2, 0)
+		-- Fallback: use original position with height offset
+		return spawnPosition + Vector3.new(0, 4, 0)
 	end
 end
 
@@ -330,8 +333,6 @@ end
 -- Animation system removed - no longer needed
 
 -- Add ragdoll logic for all enemies
-local CollectionService = game:GetService("CollectionService")
-local PhysicsService = game:GetService("PhysicsService")
 
 -- Ensure collision groups are set up
 local function setupCollisionGroups()

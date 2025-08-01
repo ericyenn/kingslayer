@@ -40,17 +40,23 @@ local function canPartTakeDamage(part)
         return false
     end
     
-    -- Check if the part's parent has a Humanoid (NPCs, players)
-    local parent = part.Parent
-    if parent and parent:FindFirstChild("Humanoid") then
+    -- Check if the part has the "Enemies" tag (for regular damage)
+    local CollectionService = game:GetService("CollectionService")
+    if CollectionService:HasTag(part, "Enemies") then
         return true
     end
     
-    -- Check if the part is part of a character model
-    -- Look for Humanoid in the model hierarchy
+    -- Check if the part's parent has the "Enemies" tag
+    local parent = part.Parent
+    if parent and CollectionService:HasTag(parent, "Enemies") then
+        return true
+    end
+    
+    -- Check if the part is part of a character model with "Enemies" tag
+    -- Look for "Enemies" tag in the model hierarchy
     local model = part.Parent
     while model and model ~= workspace do
-        if model:FindFirstChild("Humanoid") then
+        if CollectionService:HasTag(model, "Enemies") then
             return true
         end
         model = model.Parent
@@ -257,7 +263,18 @@ function HitboxSystem.getItemSettings(itemName)
     local itemKey = string.lower(itemName)
     itemKey = string.gsub(itemKey, " ", "_")
     
-    return HitboxConfig.itemSettings[itemKey] or HitboxConfig.default
+    -- Get base settings from HitboxConfig
+    local settings = HitboxConfig.itemSettings[itemKey] or HitboxConfig.default
+    
+    -- Override cooldown with ItemDefinition if available
+    local ItemDefinitions = require(game:GetService("ReplicatedStorage").Shared.ItemDefinitions)
+    local itemDef = ItemDefinitions:GetItem(itemKey)
+    
+    if itemDef and itemDef.actionData and itemDef.actionData.cooldown then
+        settings.cooldown = itemDef.actionData.cooldown
+    end
+    
+    return settings
 end
 
 -- Get enemy-specific hitbox settings

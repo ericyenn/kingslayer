@@ -10,27 +10,27 @@ EnemyAnimationConfig.ANIMATIONS = {
         {
             id = "rbxassetid://136904906232786", -- Original idle animation
             duration = {2.0, 4.0}, -- 2-4 seconds
-            weight = 30 -- 25% chance of being selected
+            weight = 40 -- 25% chance of being selected
         },
         {
             id = "rbxassetid://94818744810007", -- Yawn animation
             duration = {3.0, 4.7}, -- 3-5 seconds
-            weight = 15 -- 20% chance of being selected
+            weight = 5 -- 20% chance of being selected
         },
         {
             id = "rbxassetid://131783126711981", -- Idle scanning animation
             duration = {4.0, 6.0}, -- 4-6 seconds
-            weight = 30 -- 30% chance of being selected
+            weight = 40 -- 30% chance of being selected
         },
         {
             id = "rbxassetid://105314525985893", -- Head scratch animation
             duration = {2.5, 4.2}, -- 2.5-4.5 seconds
-            weight = 15 -- 25% chance of being selected
+            weight = 10 -- 25% chance of being selected
         },
         {
             id = "rbxassetid://70466819492998", -- New idle animation
             duration = {2.5, 4.0}, -- 2.5-4 seconds
-            weight = 20 -- 20% chance of being selected
+            weight = 10 -- 20% chance of being selected
         }
     },
     walk = "rbxassetid://121278793466470", -- Walk animation

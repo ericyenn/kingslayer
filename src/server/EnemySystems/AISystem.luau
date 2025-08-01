@@ -296,6 +296,12 @@ function AISystem._handleTalkingState(entityId, enemyAI, model, currentTime)
 	local timeInTalking = currentTime - enemyAI.stateStartTime
 	local timeRemaining = CONFIG.TALKING_DURATION - timeInTalking
 	
+	-- Ensure enemy stays stopped during talking state
+	if MovementSystem.isMoving(entityId) then
+		MovementSystem.stopMovement(entityId, model)
+		print("[AI] Entity", entityId, "was still moving during talking state, stopped movement")
+	end
+	
 	if timeInTalking >= CONFIG.TALKING_DURATION then
 		-- Conversation ended, transition to patrol state
 		print("[AI] Entity", entityId, "talking ended, transitioning to patrol")

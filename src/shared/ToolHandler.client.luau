@@ -27,7 +27,7 @@ local camera = workspace.CurrentCamera
 
 -- Debounce to prevent spamming the use action
 local debounce = false
-local DEBOUNCE_TIME = 0.25 -- 250ms
+local DEBOUNCE_TIME = 0.1 -- 100ms (minimum UI debounce)
 
 -- Charged attack configuration
 local CHARGE_CONFIG = {
@@ -513,8 +513,20 @@ onUse = function(attackType)
         warn("ToolHandler: Unknown category for item:", itemDef.name, itemDef.category)
     end
     
-    -- Reset debounce after delay
-    wait(DEBOUNCE_TIME)
+    -- Get item-specific cooldown for proper timing
+    local itemKey = string.lower(Tool.Name)
+    local itemDef = ItemDefinitions:GetItem(itemKey)
+    local toolCooldown = 0.5 -- Default fallback
+    
+    if itemDef and itemDef.actionData and itemDef.actionData.cooldown then
+        toolCooldown = itemDef.actionData.cooldown
+    end
+    
+    -- Use the longer of UI debounce or tool cooldown
+    local finalCooldown = math.max(DEBOUNCE_TIME, toolCooldown)
+    
+    -- Reset debounce after tool-specific delay
+    wait(finalCooldown)
     debounce = false
 end
 

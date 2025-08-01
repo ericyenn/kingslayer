@@ -387,11 +387,19 @@ function InventoryServerSystem:CreateToolInCharacter(player, slot)
     tool.Name = originalObject.Name
     tool.RequiresHandle = true
     tool.CanBeDropped = false -- Prevent default Roblox dropping
-    -- Use default grip orientation for natural tool positioning
-    tool.GripForward = Vector3.new(0, 1, 0)
-    tool.GripRight = Vector3.new(1, 0, -1)
-    tool.GripUp = Vector3.new(0, 0, -1)
-    tool.GripPos = Vector3.new(0, 0, 0)
+    -- Use normal grip orientation for natural tool positioning
+    tool.GripForward = Vector3.new(0, 0, 1)  -- Forward (Z-axis)
+    tool.GripRight = Vector3.new(0, 0, -1)    -- Backward (negative Z-axis) to flip the weapon
+    tool.GripUp = Vector3.new(0, 1, 0)        -- Up (Y-axis)
+    tool.GripPos = Vector3.new(0, 0, 0)       -- No offset
+    
+    -- Copy tags from the original object to the tool
+    local CollectionService = game:GetService("CollectionService")
+    local originalTags = CollectionService:GetTags(originalObject)
+    for _, tag in ipairs(originalTags) do
+        CollectionService:AddTag(tool, tag)
+        print("Copied tag", tag, "from", originalObject.Name, "to tool", tool.Name)
+    end
 
     local handle
     if originalObject:IsA("Model") then

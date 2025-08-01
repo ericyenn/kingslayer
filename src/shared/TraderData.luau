@@ -6,146 +6,168 @@ local TraderData = {}
 -- Items available for trading (display data only)
 TraderData.Items = {
 	iron_sword = {
+		id = "iron_sword",
 		name = "Iron Sword",
 		description = "A sturdy blade forged from iron ore. Perfect for adventurers seeking reliable protection.",
 		icon = "rbxassetid://0", -- Placeholder - replace with actual asset ID
-		rarity = "common"
+		rarity = "common",
+		level = 1
 	},
 	
 	steel_armor = {
+		id = "steel_armor",
 		name = "Steel Armor",
 		description = "Heavy protective gear made from refined steel. Offers excellent defense against physical attacks.",
 		icon = "rbxassetid://0", -- Placeholder
-		rarity = "uncommon"
+		rarity = "uncommon",
+		level = 2
 	},
 	
 	magic_potion = {
+		id = "magic_potion",
 		name = "Magic Potion",
 		description = "A mysterious elixir that glows with arcane energy. Its effects are said to be extraordinary.",
 		icon = "rbxassetid://0", -- Placeholder
-		rarity = "rare"
+		rarity = "rare",
+		level = 3
 	},
 	
 	golden_ring = {
+		id = "golden_ring",
 		name = "Golden Ring",
 		description = "An ornate ring crafted from pure gold. Legends speak of its mystical properties.",
 		icon = "rbxassetid://0", -- Placeholder
-		rarity = "epic"
+		rarity = "epic",
+		level = 4
 	},
 	
 	wooden_shield = {
+		id = "wooden_shield",
 		name = "Wooden Shield",
 		description = "A simple shield carved from oak wood. Basic protection for novice warriors.",
 		icon = "rbxassetid://0", -- Placeholder
-		rarity = "common"
+		rarity = "common",
+		level = 1
 	},
 	
 	fire_gem = {
+		id = "fire_gem",
 		name = "Fire Gem",
 		description = "A brilliant red gemstone that radiates warmth. Contains the essence of flame itself.",
 		icon = "rbxassetid://0", -- Placeholder
-		rarity = "rare"
+		rarity = "rare",
+		level = 3
 	},
 	
 	healing_herbs = {
+		id = "healing_herbs",
 		name = "Healing Herbs",
 		description = "Fresh medicinal plants gathered from the forest. Known for their restorative properties.",
 		icon = "rbxassetid://0", -- Placeholder
-		rarity = "common"
+		rarity = "common",
+		level = 1
 	},
 	
 	dragon_scale = {
+		id = "dragon_scale",
 		name = "Dragon Scale",
 		description = "A magnificent scale from an ancient dragon. Incredibly rare and valuable.",
 		icon = "rbxassetid://0", -- Placeholder
-		rarity = "legendary"
+		rarity = "legendary",
+		level = 4
 	},
 	
 	silver_coin = {
+		id = "silver_coin",
 		name = "Silver Coin",
 		description = "Standard currency used throughout the realm. Accepted by all merchants.",
 		icon = "rbxassetid://0", -- Placeholder
-		rarity = "common"
+		rarity = "common",
+		level = 1
 	},
 	
 	enchanted_book = {
+		id = "enchanted_book",
 		name = "Enchanted Book",
 		description = "An ancient tome filled with magical knowledge. The pages seem to shimmer with power.",
 		icon = "rbxassetid://0", -- Placeholder
-		rarity = "epic"
+		rarity = "epic",
+		level = 4
 	},
 	
 	crystal_orb = {
+		id = "crystal_orb",
 		name = "Crystal Orb",
 		description = "A perfectly spherical crystal that seems to contain swirling mists. Purpose unknown.",
 		icon = "rbxassetid://0", -- Placeholder
-		rarity = "rare"
+		rarity = "rare",
+		level = 3
 	},
 	
 	iron_ingot = {
+		id = "iron_ingot",
 		name = "Iron Ingot",
 		description = "A refined bar of iron metal. Essential material for crafting weapons and tools.",
 		icon = "rbxassetid://0", -- Placeholder
-		rarity = "common"
+		rarity = "common",
+		level = 1
 	}
 }
 
 -- Trade requirements for each item (display only - no validation)
 TraderData.Requirements = {
 	iron_sword = {
-		{item = "Iron Ingot", quantity = 2},
-		{item = "Wood", quantity = 1}
+		{item = "iron_ingot", quantity = 2},
+		{item = "wood", quantity = 1}
 	},
 	
 	steel_armor = {
-		{item = "Iron Ingot", quantity = 5},
-		{item = "Silver Coin", quantity = 10}
+		{item = "iron_ingot", quantity = 3},
+		{item = "silver_coin", quantity = 5}
 	},
 	
 	magic_potion = {
-		{item = "Healing Herbs", quantity = 3},
-		{item = "Crystal Orb", quantity = 1}
+		{item = "healing_herbs", quantity = 2},
+		{item = "crystal_orb", quantity = 1}
 	},
 	
 	golden_ring = {
-		{item = "Silver Coin", quantity = 25},
-		{item = "Fire Gem", quantity = 1}
+		{item = "golden_ring", quantity = 1},
+		{item = "dragon_scale", quantity = 1}
 	},
 	
 	wooden_shield = {
-		{item = "Wood", quantity = 3}
+		{item = "wood", quantity = 2}
 	},
 	
 	fire_gem = {
-		{item = "Silver Coin", quantity = 15},
-		{item = "Dragon Scale", quantity = 1}
+		{item = "fire_gem", quantity = 1},
+		{item = "crystal_orb", quantity = 1}
 	},
 	
 	healing_herbs = {
-		{item = "Silver Coin", quantity = 2}
+		{item = "healing_herbs", quantity = 1}
 	},
 	
 	dragon_scale = {
-		{item = "Silver Coin", quantity = 100},
-		{item = "Enchanted Book", quantity = 1}
+		{item = "dragon_scale", quantity = 1}
 	},
 	
 	silver_coin = {
-		{item = "Wood", quantity = 1}
+		{item = "silver_coin", quantity = 1}
 	},
 	
 	enchanted_book = {
-		{item = "Silver Coin", quantity = 50},
-		{item = "Crystal Orb", quantity = 2}
+		{item = "enchanted_book", quantity = 1},
+		{item = "dragon_scale", quantity = 2}
 	},
 	
 	crystal_orb = {
-		{item = "Silver Coin", quantity = 20},
-		{item = "Fire Gem", quantity = 1}
+		{item = "crystal_orb", quantity = 1}
 	},
 	
 	iron_ingot = {
-		{item = "Silver Coin", quantity = 5}
+		{item = "iron_ingot", quantity = 1}
 	}
 }
 

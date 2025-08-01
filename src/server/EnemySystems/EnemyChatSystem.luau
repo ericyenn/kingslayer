@@ -176,29 +176,7 @@ function EnemyChatSystem._triggerChat(entityId1, entityId2, enemyAI1, enemyAI2,
     -- Small delay to ensure rotation is complete before chat
     task.wait(0.1)
 
-    -- Start continuous conversation with alternating chat bubbles
-    EnemyChatSystem._startContinuousConversation(firstId, secondId, firstModel, secondModel, 
-                                               firstType, secondType, firstChat, secondChat, currentTime)
-
-    -- Update chat cooldowns and tracking for both
-    firstChat.lastChatTime = currentTime
-    secondChat.lastChatTime = currentTime
-    firstChat.chattedWith[secondId] = currentTime
-    secondChat.chattedWith[firstId] = currentTime
-    EntityManager.addComponent(firstId, "EnemyChat", firstChat)
-    EntityManager.addComponent(secondId, "EnemyChat", secondChat)
-end
-
--- Start a continuous conversation with alternating chat bubbles
-function EnemyChatSystem._startContinuousConversation(firstId, secondId, firstModel, secondModel, 
-                                                    firstType, secondType, firstChat, secondChat, startTime)
-    print("💬 EnemyChatSystem: Starting continuous conversation between", firstId, "and", secondId)
-    
-    local conversationDuration = 6.0 -- 6 seconds total conversation
-    local chatInterval = 1.0 -- New chat bubble every 1 second
-    local currentTime = startTime
-    
-    -- First enemy starts immediately
+    -- Display one chat bubble for each enemy
     local firstPhrase = EnemyChatData:GetRandomPhrase(firstType.enemyType, "talking")
     if firstPhrase then
         EnemyChatSystem._displayChatBubble(firstModel.part, firstPhrase)
@@ -207,7 +185,7 @@ function EnemyChatSystem._startContinuousConversation(firstId, secondId, firstMo
         print("   ⚠️ No phrase found for first enemy type:", firstType.enemyType)
     end
     
-    -- Second enemy starts after 1 second
+    -- Second enemy responds after a short delay
     task.delay(1.0, function()
         local secondPhrase = EnemyChatData:GetRandomPhrase(secondType.enemyType, "talking")
         if secondPhrase then
@@ -217,44 +195,14 @@ function EnemyChatSystem._startContinuousConversation(firstId, secondId, firstMo
             print("   ⚠️ No phrase found for second enemy type:", secondType.enemyType)
         end
     end)
-    
-    -- Continue conversation with alternating bubbles
-    local chatCount = 0
-    local function continueConversation()
-        currentTime = tick()
-        local elapsed = currentTime - startTime
-        
-        -- Stop if conversation duration has passed
-        if elapsed >= conversationDuration then
-            print("💬 Conversation ended between", firstId, "and", secondId)
-            return
-        end
-        
-        chatCount = chatCount + 1
-        
-        -- Alternate between enemies
-        if chatCount % 2 == 1 then
-            -- First enemy's turn
-            local phrase = EnemyChatData:GetRandomPhrase(firstType.enemyType, "talking")
-            if phrase then
-                EnemyChatSystem._displayChatBubble(firstModel.part, phrase)
-                print("💬 Enemy", firstId, "said:", phrase)
-            end
-        else
-            -- Second enemy's turn
-            local phrase = EnemyChatData:GetRandomPhrase(secondType.enemyType, "talking")
-            if phrase then
-                EnemyChatSystem._displayChatBubble(secondModel.part, phrase)
-                print("💬 Enemy", secondId, "responded:", phrase)
-            end
-        end
-        
-        -- Schedule next chat bubble
-        task.delay(chatInterval, continueConversation)
-    end
-    
-    -- Start the continuous conversation after initial delay
-    task.delay(2.0, continueConversation)
+
+    -- Update chat cooldowns and tracking for both
+    firstChat.lastChatTime = currentTime
+    secondChat.lastChatTime = currentTime
+    firstChat.chattedWith[secondId] = currentTime
+    secondChat.chattedWith[firstId] = currentTime
+    EntityManager.addComponent(firstId, "EnemyChat", firstChat)
+    EntityManager.addComponent(secondId, "EnemyChat", secondChat)
 end
 
 -- Display chat bubble using Roblox's built-in chat system

@@ -14,6 +14,8 @@ local DragServerSystem = require(ServerSystems.DragServerSystem)
 local InventoryServerSystem = require(ServerSystems.InventoryServerSystem)
 local ArmorServerSystem = require(ServerSystems.ArmorServerSystem)
 local DamageSystem = require(ServerSystems.DamageSystem)
+local BreakableSpawnSystem = require(ServerSystems.BreakableSpawnSystem)
+local BreakableDamageSystem = require(ServerSystems.BreakableDamageSystem)
 local TimeManager = require(ServerSystems.TimeManager)
 local SanitySystem = require(ServerSystems.SanitySystem)
 local PlayerRagdollSystem = require(ServerSystems.PlayerRagdollSystem)
@@ -41,6 +43,8 @@ DragServerSystem:Initialize()
 InventoryServerSystem:Initialize()
 ArmorServerSystem:Initialize()
 DamageSystem:Initialize()
+BreakableSpawnSystem:Initialize()
+BreakableDamageSystem:Initialize()
 TimeManager.Init()
 SanitySystem:Initialize()
 PlayerRagdollSystem:Initialize()
@@ -76,6 +80,7 @@ end
 _G.ItemSpawnSystem = ItemSpawnSystem
 _G.InventoryServerSystem = InventoryServerSystem
 _G.DamageSystem = DamageSystem
+_G.BreakableDamageSystem = BreakableDamageSystem
 _G.PlayerEffectsSystem = PlayerEffectsSystem
 
 -- Set up boss system RemoteEvent
@@ -108,6 +113,25 @@ local spawnBossRemote = ReplicatedStorage:FindFirstChild("SpawnBoss")
 if spawnBossRemote then
     spawnBossRemote.OnServerEvent:Connect(handleBossSpawn)
     print("Boss spawn remote connected")
+end
+
+-- Set up breakable damage handling
+local function handleBreakableDamage(player, targetPart, damageAmount)
+    print("Player", player.Name, "requested breakable damage:", damageAmount)
+    
+    local success, result = BreakableDamageSystem:ProcessBreakableDamageRequest(player, targetPart, damageAmount)
+    if success then
+        print("Breakable damage successful for player:", player.Name, "-", result)
+    else
+        print("Breakable damage failed for player:", player.Name, "-", result)
+    end
+end
+
+-- Connect the breakable damage remote
+local applyBreakableDamageRemote = ReplicatedStorage:FindFirstChild("ApplyBreakableDamage")
+if applyBreakableDamageRemote then
+    applyBreakableDamageRemote.OnServerEvent:Connect(handleBreakableDamage)
+    print("Breakable damage remote connected")
 end
 
 -- Set up respawn RemoteEvent

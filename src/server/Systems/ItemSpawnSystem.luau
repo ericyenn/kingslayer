@@ -110,7 +110,7 @@ function ItemPoolSpawnSystem._spawnItemAtSpawner(spawner, itemId)
     local radius = spawner.spawnRadius or 5
     local angle = math.random() * 2 * math.pi
     local dist = math.random() * radius
-    local pos = basePos + Vector3.new(math.cos(angle) * dist, 0, math.sin(angle) * dist)
+    local pos = basePos + Vector3.new(math.cos(angle) * dist, 2, math.sin(angle) * dist) -- Added 2 studs height
     -- Spawn the item using the utility logic
     ItemPoolSpawnSystem.SpawnItem(itemId, pos)
 end
@@ -204,6 +204,14 @@ function ItemPoolSpawnSystem.SpawnItem(itemId, position)
     item.Parent = workspace
     CollectionService:AddTag(item, Constants.TAGS.DRAGGABLE_ITEM)
     
+    -- Add tags from item definition
+    if itemDefinition.tags then
+        for _, tag in ipairs(itemDefinition.tags) do
+            CollectionService:AddTag(item, tag)
+            print("Added tag", tag, "to", item.Name)
+        end
+    end
+    
     -- Add ECS components to the item (server-side setup)
     ItemPoolSpawnSystem:AddECSComponentsToItem(item, itemDefinition)
     
@@ -217,6 +225,7 @@ function ItemPoolSpawnSystem:AddECSComponentsToItem(item, itemDefinition)
     local Draggable = require(ReplicatedStorage.Shared.Components.Draggable)
     local Hoverable = require(ReplicatedStorage.Shared.Components.Hoverable)
     local Inventoryable = require(ReplicatedStorage.Shared.Components.Inventoryable)
+    local ItemIdentity = require(ReplicatedStorage.Shared.Components.ItemIdentity)
     
     -- Add components based on item definition
     if itemDefinition.components then
@@ -251,6 +260,17 @@ function ItemPoolSpawnSystem:AddECSComponentsToItem(item, itemDefinition)
             print("Added default", componentName, "component to", item.Name)
         end
     end
+    
+    -- ALWAYS add ItemIdentity component with the item's actual data
+    local identityComponent = ItemIdentity.new({
+        itemId = itemDefinition.id,
+        itemName = itemDefinition.name,
+        category = itemDefinition.category,
+        rarity = itemDefinition.rarity or "common",
+        level = itemDefinition.level or 1
+    })
+    ECS:AddComponent(item, "ItemIdentity", identityComponent)
+    print("Added ItemIdentity component to", item.Name, "with ID:", itemDefinition.id)
 end
 
 return ItemPoolSpawnSystem 

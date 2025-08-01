@@ -13,15 +13,7 @@ local NPCManager = {}
 NPCManager.questActive = false
 NPCManager.spawnedNPCs = {}
 
--- R6 Default Animation IDs
-local R6_ANIMATIONS = {
-	idle = "rbxassetid://180435571",
-	walk = "rbxassetid://180426354",
-	run = "rbxassetid://180426354", -- Same as walk for R6
-}
-
--- Track NPC animations {[npcModel] = {animations = {}, currentAnim = nil, isMoving = false}}
-NPCManager.npcAnimations = {}
+-- Animation system removed - NPCs no longer use animations
 
 -- ENHANCED: Track RunService connections for cleanup
 NPCManager.followConnections = {} -- {[npcId] = connection}
@@ -46,9 +38,8 @@ function NPCManager:CreateNPCModel(npcId)
 		if not template then
 			warn("No model found for NPC:", npcId)
 			warn("Please add an R15 or R6 Dummy from the toolbox to ServerStorage and rename it to 'PlayerModel'")
-			warn("This is required for NPCs to have proper animations!")
 			
-			-- Fallback: Create a basic model (but animations won't work)
+			-- Fallback: Create a basic model
 			local model = Instance.new("Model")
 			model.Name = npcId
 			
@@ -64,7 +55,7 @@ function NPCManager:CreateNPCModel(npcId)
 			local humanoid = Instance.new("Humanoid")
 			humanoid.Parent = model
 			
-			warn("Created basic NPC without animations. Add PlayerModel template for full functionality!")
+			warn("Created basic NPC. Add PlayerModel template for full functionality!")
 			return model
 		end
 	end
@@ -79,24 +70,13 @@ function NPCManager:CreateNPCModel(npcId)
 		model.HumanoidRootPart.Anchored = true
 	end
 	
-	-- Ensure all NPCs have proper Humanoid setup for animations
+	-- Ensure all NPCs have proper Humanoid setup
 	local humanoid = model:FindFirstChild("Humanoid")
 	if humanoid then
 		-- Configure Humanoid for proper NPC behavior
 		humanoid.PlatformStand = false -- Allow normal movement
 		humanoid.Sit = false -- Don't sit
 		humanoid.WalkSpeed = 16 -- Default walking speed
-		
-		-- Ensure the Humanoid can use animations
-		local animator = humanoid:FindFirstChild("Animator")
-		if not animator then
-			-- Create Animator if missing (needed for animations)
-			animator = Instance.new("Animator")
-			animator.Parent = humanoid
-		end
-		
-		-- Load R6 animations for this NPC
-		self:LoadNPCAnimations(model, humanoid, animator)
 	else
 		warn(npcId .. " model doesn't have a Humanoid! Make sure you're using an R15/R6 dummy as PlayerModel template.")
 	end
@@ -105,7 +85,7 @@ function NPCManager:CreateNPCModel(npcId)
 	if npcId == "princess" then
 		local humanoid = model:FindFirstChild("Humanoid")
 		if humanoid then
-			-- Configure the existing Humanoid (don't create a new one - this preserves animations)
+			-- Configure the existing Humanoid
 			humanoid.MaxHealth = 100
 			humanoid.Health = 100
 			
@@ -144,93 +124,7 @@ function NPCManager:CreateNPCModel(npcId)
 	return model
 end
 
--- Load R6 animations for an NPC
-function NPCManager:LoadNPCAnimations(model, humanoid, animator)
-	-- Create animation objects
-	local idleAnim = Instance.new("Animation")
-	idleAnim.AnimationId = R6_ANIMATIONS.idle
-	
-	local walkAnim = Instance.new("Animation")
-	walkAnim.AnimationId = R6_ANIMATIONS.walk
-	
-	-- Load animations
-	local animations = {}
-	animations.idle = animator:LoadAnimation(idleAnim)
-	animations.walk = animator:LoadAnimation(walkAnim)
-	
-	-- Initialize animation state
-	local animState = {
-		animations = animations,
-		currentAnim = nil,
-		isMoving = false
-	}
-	
-	-- Store animation state
-	self.npcAnimations[model] = animState
-	
-	-- Set up movement detection
-	self:SetupMovementDetection(model, humanoid, animState)
-	
-	-- Start with idle animation
-	self:PlayNPCAnimation(model, "idle")
-	
-	print("Loaded R6 animations for", model.Name)
-end
-
--- Play animation for an NPC
-function NPCManager:PlayNPCAnimation(model, animName)
-	local animState = self.npcAnimations[model]
-	if not animState or not animState.animations[animName] then
-		return
-	end
-	
-	-- Stop current animation
-	if animState.currentAnim then
-		animState.currentAnim:Stop()
-	end
-	
-	-- Play new animation
-	animState.currentAnim = animState.animations[animName]
-	animState.currentAnim:Play()
-	
-	print(model.Name .. " playing " .. animName .. " animation")
-end
-
--- Set up movement detection for animation triggers
-function NPCManager:SetupMovementDetection(model, humanoid, animState)
-	-- Detect when humanoid starts/stops moving
-	humanoid.Running:Connect(function(speed)
-		if speed > 0.1 and not animState.isMoving then
-			-- Started moving
-			animState.isMoving = true
-			self:PlayNPCAnimation(model, "walk")
-		elseif speed <= 0.1 and animState.isMoving then
-			-- Stopped moving
-			animState.isMoving = false
-			self:PlayNPCAnimation(model, "idle")
-		end
-	end)
-end
-
--- Clean up animations when NPC is removed
-function NPCManager:CleanupNPCAnimations(model)
-	local animState = self.npcAnimations[model]
-	if animState then
-		-- Stop current animation
-		if animState.currentAnim then
-			animState.currentAnim:Stop()
-		end
-		
-		-- Clean up animation tracks
-		for _, anim in pairs(animState.animations) do
-			anim:Destroy()
-		end
-		
-		-- Remove from tracking
-		self.npcAnimations[model] = nil
-		print("Cleaned up animations for", model.Name)
-	end
-end
+-- Animation functions removed - NPCs no longer use animations
 
 -- Optional: Add accessories to NPCs
 function NPCManager:AddNPCAccessories(model, npcId)
@@ -279,9 +173,6 @@ function NPCManager:RemoveNPC(npcId)
 			self.followConnections[npcId] = nil
 		end
 		
-		-- Clean up animations before destroying
-		self:CleanupNPCAnimations(self.spawnedNPCs[npcId])
-		
 		self.spawnedNPCs[npcId]:Destroy()
 		self.spawnedNPCs[npcId] = nil
 	end
@@ -297,14 +188,12 @@ function NPCManager:Cleanup()
 	
 	-- Clean up all NPCs
 	for npcId, npcModel in pairs(self.spawnedNPCs) do
-		self:CleanupNPCAnimations(npcModel)
 		npcModel:Destroy()
 	end
 	self.spawnedNPCs = {}
 	
 	-- Clear all state
 	self.questActive = false
-	self.npcAnimations = {}
 end
 
 -- Start the quest (spawn princess)

@@ -81,6 +81,18 @@ function DialogueHandler:ProcessChoice(player, npcId, choiceIndex)
 		return
 	end
 	
+	-- Handle upgrade dialogue specially
+	if activeDialogue.isUpgradeDialogue then
+		local action = activeDialogue.upgradeResponse.actions[choiceIndex]
+		if action then
+			print("Processing upgrade action:", action, "for player", player.Name)
+			self:ExecuteAction(player, npcId, action)
+		else
+			print("Invalid upgrade choice", choiceIndex)
+		end
+		return
+	end
+	
 	-- Get dialogue data and action
 	local dialogueData = self:GetDialogueForNPC(npcId, player)
 	if not dialogueData or not dialogueData.actions[choiceIndex] then
@@ -170,6 +182,111 @@ function DialogueHandler:ExecuteAction(player, npcId, action)
 		-- Use new trader system instead of old trade menu
 		local TraderHandler = require(script.Parent.TraderHandler)
 		TraderHandler:OpenShop(player, npcId)
+		
+	elseif action == "upgrade" then
+		-- Show upgrade response dialogue with current unlock request and options
+		local TraderHandler = require(script.Parent.TraderHandler)
+		local currentRequest = TraderHandler:GetCurrentUnlockRequest()
+		
+		if currentRequest then
+			-- Create custom response with unlock request and dialogue options
+			local upgradeResponse = {
+				text = "To unlock the next level, I need:\n\n" .. currentRequest.description .. "\n\n• [Check Tradezone] - I have the items ready\n• [Leave] - Maybe later",
+				actions = {"check_tradezone", "goodbye"}
+			}
+			
+			-- Track this as an upgrade dialogue
+			self.activeDialogues[player] = {
+				npcId = npcId,
+				startTime = tick(),
+				isUpgradeDialogue = true,
+				upgradeResponse = upgradeResponse
+			}
+			
+			-- Show response with dialogue options
+			RemoteEvents.DisplayDialogue:FireClient(player, npcId, upgradeResponse)
+		else
+			-- No more levels to unlock
+			local maxLevelResponse = {
+				text = "I have already unlocked all my levels!",
+				actions = {}
+			}
+			
+			RemoteEvents.DisplayDialogue:FireClient(player, npcId, maxLevelResponse)
+			task.spawn(function()
+				task.wait(3)
+				self:EndDialogue(player)
+			end)
+		end
+		
+	elseif action == "check_tradezone" then
+		-- Check if tradezone has required items and unlock level
+		local TraderHandler = require(script.Parent.TraderHandler)
+		local currentRequest = TraderHandler:GetCurrentUnlockRequest()
+		
+		print("DEBUG: Check tradezone called")
+		print("DEBUG: Current request:", currentRequest and currentRequest.description or "None")
+		print("DEBUG: Zone items:", TraderHandler.zoneItems)
+		
+		if currentRequest then
+			-- Check if all requirements are met
+			local allRequirementsMet = true
+			for _, requirement in ipairs(currentRequest.requirements) do
+				local currentQuantity = TraderHandler.zoneItems[requirement.item] or 0
+				print("DEBUG: Checking requirement:", requirement.item, "needed:", requirement.quantity, "have:", currentQuantity)
+				if currentQuantity < requirement.quantity then
+					allRequirementsMet = false
+					print("DEBUG: Requirement not met for", requirement.item)
+					break
+				end
+			end
+			
+			print("DEBUG: All requirements met:", allRequirementsMet)
+			
+			if allRequirementsMet then
+				-- Requirements met - unlock the level
+				local successResponse = {
+					text = "Excellent! I can see all the required items in the tradezone. The trader shop has been upgraded to the next level!",
+					actions = {}
+				}
+				
+				RemoteEvents.DisplayDialogue:FireClient(player, npcId, successResponse)
+				
+				-- Unlock the level
+				TraderHandler:CompleteZoneRequest()
+				
+				task.spawn(function()
+					task.wait(4)
+					self:EndDialogue(player)
+				end)
+			else
+				-- Requirements not met
+				local missingResponse = {
+					text = "I don't see all the required items in the tradezone. Please make sure all items are placed there before checking again.",
+					actions = {}
+				}
+				
+				RemoteEvents.DisplayDialogue:FireClient(player, npcId, missingResponse)
+				
+				task.spawn(function()
+					task.wait(4)
+					self:EndDialogue(player)
+				end)
+			end
+		else
+			-- No current request (shouldn't happen)
+			local errorResponse = {
+				text = "There are no levels to unlock at this time.",
+				actions = {}
+			}
+			
+			RemoteEvents.DisplayDialogue:FireClient(player, npcId, errorResponse)
+			
+			task.spawn(function()
+				task.wait(3)
+				self:EndDialogue(player)
+			end)
+		end
 		
 	elseif action == "tell_story" then
 		-- Tell story
