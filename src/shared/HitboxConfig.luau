@@ -34,13 +34,8 @@ local HitboxConfig = {
         }
     },
     
-    -- Enemy settings
+    -- Enemy settings (melee enemies now use raycasts instead of hitboxes)
     enemySettings = {
-        melee = {
-            size = Vector3.new(1.5, 1.5, 1.5),
-            distance = 1.0,
-            swingDuration = 0.3
-        },
         boss = {
             size = Vector3.new(3, 3, 3),
             distance = 2.0,

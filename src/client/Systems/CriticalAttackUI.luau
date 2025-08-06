@@ -13,7 +13,7 @@ local BAR_CONFIG = {
     width = 18,  -- Scaled up from 12 to 18 (1.5x larger)
     height = 150, -- Scaled up from 100 to 150 (1.5x larger)
     offsetX = -60, -- Adjusted offset for bigger bar (1.5x larger)
-    backgroundColor = Color3.fromRGB(0, 0, 0), -- Changed to black
+    backgroundColor = Color3.fromRGB(45, 45, 45), -- Dark gray like dialogue UI
     borderColor = Color3.fromRGB(120, 120, 120),
     transparency = 0.3 -- Increased opacity (more transparent) for better visibility
 }
@@ -23,8 +23,8 @@ local CRITICAL_CONFIG = {
     maxPosition = 0.7, -- 70% from top (leaves room for zone height)
     minSize = 0.15,    -- 15% of bar height
     maxSize = 0.25,    -- 25% of bar height
-    color = Color3.fromRGB(255, 255, 255), -- White highlight
-    transparency = 0.0 -- Make it fully opaque white
+    color = Color3.fromRGB(0, 255, 0), -- Changed to green for timing mode
+    transparency = 0.0 -- Make it fully opaque green
 }
 
 local INDICATOR_CONFIG = {
@@ -38,11 +38,14 @@ local criticalBarGui = nil
 local criticalBarFrame = nil
 local criticalZoneFrame = nil
 local indicatorFrame = nil
+local chargeFillFrame = nil -- New: fill frame for charging mode
 
 -- State tracking
 local isBarVisible = false
 local indicatorAnimation = nil
 local currentCriticalZone = nil
+local currentMode = "HIDDEN" -- "HIDDEN", "CHARGING", or "TIMING"
+local chargeProgress = 0.0 -- 0.0 to 1.0
 
 function CriticalAttackUI:Initialize()
     -- Set up global reference for other systems
@@ -72,10 +75,7 @@ function CriticalAttackUI:CreateCriticalBarUI()
     criticalBarFrame.BorderSizePixel = 0
     criticalBarFrame.Parent = criticalBarGui
     
-    -- Add rounded corners to main bar
-    local barCorner = Instance.new("UICorner")
-    barCorner.CornerRadius = UDim.new(0, 9) -- Scaled up from 6 to 9 (1.5x larger)
-    barCorner.Parent = criticalBarFrame
+    -- No rounded corners for main bar
     
     -- Add border stroke
     local borderStroke = Instance.new("UIStroke")
@@ -83,18 +83,28 @@ function CriticalAttackUI:CreateCriticalBarUI()
     borderStroke.Thickness = 1
     borderStroke.Parent = criticalBarFrame
     
+    -- Charge fill frame (for charging mode)
+    chargeFillFrame = Instance.new("Frame")
+    chargeFillFrame.Name = "ChargeFill"
+    chargeFillFrame.Size = UDim2.new(1, 0, 0, 0) -- Start with no height
+    chargeFillFrame.Position = UDim2.new(0, 0, 1, 0) -- Start at bottom
+    chargeFillFrame.BackgroundColor3 = Color3.fromRGB(255, 255, 255) -- White fill
+    chargeFillFrame.BackgroundTransparency = 0.2 -- Slightly transparent
+    chargeFillFrame.BorderSizePixel = 0
+    chargeFillFrame.Parent = criticalBarFrame
+    
+    -- No rounded corners for charge fill
+    
     -- Critical zone frame (will be positioned dynamically)
     criticalZoneFrame = Instance.new("Frame")
     criticalZoneFrame.Name = "CriticalZone"
     criticalZoneFrame.BackgroundColor3 = CRITICAL_CONFIG.color
-    criticalZoneFrame.BackgroundTransparency = CRITICAL_CONFIG.transparency -- Use config transparency (0.0 for opaque white)
+    criticalZoneFrame.BackgroundTransparency = CRITICAL_CONFIG.transparency
     criticalZoneFrame.BorderSizePixel = 0
     criticalZoneFrame.Parent = criticalBarFrame
+    criticalZoneFrame.Visible = false -- Hidden during charging mode
     
-    -- Add rounded corners to critical zone
-    local zoneCorner = Instance.new("UICorner")
-    zoneCorner.CornerRadius = UDim.new(0, 6) -- Scaled up from 4 to 6 (1.5x larger)
-    zoneCorner.Parent = criticalZoneFrame
+    -- No rounded corners for critical zone
     
     -- Moving indicator frame
     indicatorFrame = Instance.new("Frame")
@@ -105,13 +115,70 @@ function CriticalAttackUI:CreateCriticalBarUI()
     indicatorFrame.BackgroundTransparency = 0
     indicatorFrame.BorderSizePixel = 0
     indicatorFrame.Parent = criticalBarFrame
+    indicatorFrame.Visible = false -- Hidden during charging mode
     
-    -- Add rounded corners to indicator
-    local indicatorCorner = Instance.new("UICorner")
-    indicatorCorner.CornerRadius = UDim.new(0, 3) -- Scaled up from 2 to 3 (1.5x larger)
-    indicatorCorner.Parent = indicatorFrame
+    -- No rounded corners for indicator
     
     print("Critical bar UI created")
+end
+
+function CriticalAttackUI:StartCharging()
+    if currentMode ~= "HIDDEN" then return end
+    
+    currentMode = "CHARGING"
+    chargeProgress = 0.0
+    
+    -- Show the bar
+    criticalBarGui.Enabled = true
+    isBarVisible = true
+    
+    -- Reset fill to 0
+    chargeFillFrame.Size = UDim2.new(1, 0, 0, 0)
+    chargeFillFrame.Position = UDim2.new(0, 0, 1, 0)
+    chargeFillFrame.Visible = true
+    
+    -- Hide timing elements
+    criticalZoneFrame.Visible = false
+    indicatorFrame.Visible = false
+    
+    print("Critical bar: Started charging mode")
+end
+
+function CriticalAttackUI:UpdateChargeProgress(progress)
+    if currentMode ~= "CHARGING" then return end
+    
+    chargeProgress = math.min(math.max(progress, 0.0), 1.0) -- Use math.min/max instead of math.clamp
+    
+    -- Update fill frame
+    local fillHeight = chargeProgress
+    chargeFillFrame.Size = UDim2.new(1, 0, fillHeight, 0)
+    chargeFillFrame.Position = UDim2.new(0, 0, 1 - fillHeight, 0)
+    
+    -- Check if we should transition to timing mode
+    if chargeProgress >= 1.0 then
+        self:TransitionToTimingMode()
+    end
+end
+
+function CriticalAttackUI:TransitionToTimingMode()
+    if currentMode ~= "CHARGING" then return end
+    
+    currentMode = "TIMING"
+    
+    -- Hide charge fill
+    chargeFillFrame.Visible = false
+    
+    -- Generate new random critical zone
+    self:GenerateCriticalZone()
+    
+    -- Show timing elements
+    criticalZoneFrame.Visible = true
+    indicatorFrame.Visible = true
+    
+    -- Start indicator animation
+    self:StartIndicatorAnimation()
+    
+    print("Critical bar: Transitioned to timing mode")
 end
 
 function CriticalAttackUI:GenerateCriticalZone()
@@ -139,19 +206,11 @@ function CriticalAttackUI:GenerateCriticalZone()
 end
 
 function CriticalAttackUI:ShowCriticalBar()
-    if isBarVisible then return end
-    
-    -- Generate new random critical zone
-    self:GenerateCriticalZone()
-    
-    -- Show the bar
-    criticalBarGui.Enabled = true
-    isBarVisible = true
-    
-    -- Start indicator animation
-    self:StartIndicatorAnimation()
-    
-    print("Critical bar shown with new zone")
+    -- Legacy method - now just transitions to timing mode
+    if currentMode == "HIDDEN" then
+        self:StartCharging()
+        self:UpdateChargeProgress(1.0) -- Immediately fill to trigger timing mode
+    end
 end
 
 function CriticalAttackUI:HideCriticalBar()
@@ -160,6 +219,8 @@ function CriticalAttackUI:HideCriticalBar()
     -- Hide the bar
     criticalBarGui.Enabled = false
     isBarVisible = false
+    currentMode = "HIDDEN"
+    chargeProgress = 0.0
     
     -- Stop indicator animation
     self:StopIndicatorAnimation()
@@ -187,7 +248,7 @@ function CriticalAttackUI:StartIndicatorAnimation()
         tween:Play()
         
         tween.Completed:Connect(function()
-            if isBarVisible then
+            if isBarVisible and currentMode == "TIMING" then
                 animateUp()
             end
         end)
@@ -202,7 +263,7 @@ function CriticalAttackUI:StartIndicatorAnimation()
         tween:Play()
         
         tween.Completed:Connect(function()
-            if isBarVisible then
+            if isBarVisible and currentMode == "TIMING" then
                 animateDown()
             end
         end)
@@ -222,7 +283,7 @@ function CriticalAttackUI:StopIndicatorAnimation()
 end
 
 function CriticalAttackUI:IsIndicatorInCriticalZone()
-    if not isBarVisible or not currentCriticalZone then
+    if not isBarVisible or currentMode ~= "TIMING" or not currentCriticalZone then
         return false
     end
     
@@ -343,6 +404,14 @@ end
 
 function CriticalAttackUI:IsBarVisible()
     return isBarVisible
+end
+
+function CriticalAttackUI:GetCurrentMode()
+    return currentMode
+end
+
+function CriticalAttackUI:GetChargeProgress()
+    return chargeProgress
 end
 
 -- Cleanup function

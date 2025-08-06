@@ -38,6 +38,12 @@ local function enforceZeroHealth(player)
     local humanoid = player.Character:FindFirstChildOfClass("Humanoid")
     if not humanoid then return end
     
+    -- Only enforce zero health for players, not NPCs
+    -- Check if this is actually a player (not an NPC)
+    if not Players:GetPlayerFromCharacter(player.Character) then
+        return -- This is an NPC, don't enforce zero health
+    end
+    
     -- Prevent feedback loops
     if enforcingHealth[player] then
         return
@@ -240,13 +246,16 @@ local function onCharacterAdded(character)
         humanoid.Destroying:Connect(function()
             warn("[PlayerRagdollSystem] Humanoid is being destroyed!", humanoid)
         end)
-        -- Store the HealthChanged connection so we can disconnect it later
-        healthChangedConnections[character] = humanoid.HealthChanged:Connect(function(health)
-            if health <= 0 then
-                humanoid.EvaluateStateMachine = false -- Disable state machine on 'death'
-                ragdollCharacter(character)
-            end
-        end)
+        -- Only set up HealthChanged connection for players, not NPCs
+        if player then
+            -- Store the HealthChanged connection so we can disconnect it later
+            healthChangedConnections[character] = humanoid.HealthChanged:Connect(function(health)
+                if health <= 0 then
+                    humanoid.EvaluateStateMachine = false -- Disable state machine on 'death'
+                    ragdollCharacter(character)
+                end
+            end)
+        end
         -- Remove or comment out the Died event handler
         -- humanoid.Died:Connect(function()
         --     ragdollCharacter(character)

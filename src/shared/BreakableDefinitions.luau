@@ -43,9 +43,6 @@ BreakableDefinitions.breakables = {
             { item = "log", chance = 1.0, quantity = {min = 1, max = 3} }
         },
         
-        -- Respawn settings
-        respawnTime = 300, -- 5 minutes
-        
         -- Visual/Audio
         breakAnimation = "tree_fall",
         soundEffect = "tree_break",
@@ -71,9 +68,6 @@ BreakableDefinitions.breakables = {
             { item = "rock", chance = 1.0, quantity = {min = 1, max = 2} }
         },
         
-        -- Respawn settings
-        respawnTime = 240, -- 4 minutes
-        
         -- Visual/Audio
         breakAnimation = "rock_break",
         soundEffect = "rock_break",
@@ -97,9 +91,6 @@ BreakableDefinitions.breakables = {
         dropItems = {
             { item = "crystal", chance = 1.0, quantity = {min = 1, max = 1} }
         },
-        
-        -- Respawn settings
-        respawnTime = 600, -- 10 minutes
         
         -- Visual/Audio
         breakAnimation = "crystal_break",
@@ -149,7 +140,6 @@ function BreakableDefinitions:CreateBreakableComponents(breakableId)
             breakableType = breakableDef.breakableType,
             requiredTool = breakableDef.requiredTool,
             dropItems = breakableDef.dropItems,
-            respawnTime = breakableDef.respawnTime,
             breakAnimation = breakableDef.breakAnimation,
             soundEffect = breakableDef.soundEffect
         }),

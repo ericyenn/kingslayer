@@ -40,6 +40,7 @@ local chargeStartTime = 0
 local chargeConnection = nil
 local isToolEquipped = false
 local isCriticalWindowActive = false -- Track if critical window is open
+local chargeAnimationConnection = nil -- Track charge animation connection
 
 -- R6 Animation system for charged attacks
 local R6_ANIMATION = {
@@ -52,7 +53,6 @@ local R6_ANIMATION = {
 }
 
 -- Animation state tracking
-local chargeAnimationConnection = nil
 local originalRightShoulderC0 = nil
 local currentRightShoulder = nil
 local lastAngleUpdate = 0
@@ -277,6 +277,11 @@ local function startCharging()
     
     print("DEBUG: Started charging attack")
     
+    -- Start critical bar charging immediately
+    if _G.CriticalAttackUI then
+        _G.CriticalAttackUI:StartCharging()
+    end
+    
     -- Setup R6 charge animation
     if setupR6ChargeAnimation() then
         -- Start real-time animation updates
@@ -296,15 +301,15 @@ local function startCharging()
             -- Apply to R6 character
             updateR6ArmPosition(currentAngle)
             
-            -- Stop progression at 1.5 seconds (full charge) but keep arm raised
-            if elapsedTime >= 1.5 then
-                updateR6ArmPosition(R6_ANIMATION.MAX_ANGLE)
+            -- Update critical bar progress
+            if _G.CriticalAttackUI then
+                local progress = math.min(elapsedTime / CHARGE_CONFIG.CHARGE_THRESHOLD, 1.0)
+                _G.CriticalAttackUI:UpdateChargeProgress(progress)
                 
-                -- Show critical bar when fully charged (only once)
-                if not isCriticalWindowActive and _G.CriticalAttackUI then
-                    _G.CriticalAttackUI:ShowCriticalBar()
+                -- Check if we've reached full charge
+                if elapsedTime >= CHARGE_CONFIG.CHARGE_THRESHOLD and not isCriticalWindowActive then
                     isCriticalWindowActive = true
-                    print("DEBUG: Critical window activated - bar shown")
+                    print("DEBUG: Critical window activated")
                 end
             end
         end)
@@ -338,7 +343,7 @@ local function stopCharging()
     print("DEBUG: Stopped charging after", holdDuration, "seconds. Attack type:", attackType)
     
     -- Hide critical bar if it was shown
-    if isCriticalWindowActive and _G.CriticalAttackUI then
+    if _G.CriticalAttackUI then
         _G.CriticalAttackUI:HideCriticalBar()
         isCriticalWindowActive = false
     end
@@ -360,7 +365,7 @@ cancelCharging = function()
     print("DEBUG: Cancelled charging attack")
     
     -- Hide critical bar if it was shown
-    if isCriticalWindowActive and _G.CriticalAttackUI then
+    if _G.CriticalAttackUI then
         _G.CriticalAttackUI:HideCriticalBar()
         isCriticalWindowActive = false
     end

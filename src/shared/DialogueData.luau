@@ -18,8 +18,8 @@ DialogueData.NPCDialogues = {
 	
 	-- Princess NPC - Only appears after quest is taken
 	princess = {
-		text = "Oh brave hero! You've found me! Please help break this terrible curse!\n\n• [Break Curse - Become Companion] - I'll escort you to safety\n• [Break Curse - Test Your Strength] - Prove you're worthy first\n• [Leave Cursed] - I cannot help you right now",
-		actions = {"become_companion", "enable_combat", "goodbye"}
+		text = "Oh brave hero! You've found me! Please help break this terrible curse!\n\n• [Break Curse - Become Companion] - I'll escort you to safety\n• [Leave Cursed] - I cannot help you right now",
+		actions = {"become_companion", "goodbye"}
 	},
 	
 	-- Trader NPC
@@ -51,10 +51,6 @@ DialogueData.ResponseDialogues = {
 	},
 	become_companion = {
 		text = "Thank you! I am free! I shall accompany you on your adventures!",
-		actions = {}
-	},
-	enable_combat = {
-		text = "The curse compels me to fight! Defeat me to break the curse forever!",
 		actions = {}
 	},
 	open_trade = {

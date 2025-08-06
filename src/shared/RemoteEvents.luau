@@ -81,6 +81,9 @@ if RunService:IsServer() then
     local setupEnemyAnimationsRemote = createRemoteEvent("SetupEnemyAnimations")
     local enemyAIStateUpdateRemote = createRemoteEvent("EnemyAIStateUpdate")
     
+    -- Server: Create enemy attack validation RemoteEvent
+    local enemyAttackRequestRemote = createRemoteEvent("EnemyAttackRequest")
+    
     print("Server created DragRequest RemoteFunction") -- Debug
     print("Server created InventoryRequest RemoteFunction") -- Debug
     print("Server created ArmorRequest RemoteFunction") -- Debug
@@ -132,6 +135,9 @@ if RunService:IsServer() then
     -- Animation system remotes
     RemoteEvents.SetupEnemyAnimations = setupEnemyAnimationsRemote
     RemoteEvents.EnemyAIStateUpdate = enemyAIStateUpdateRemote
+    
+    -- Enemy attack validation remote
+    RemoteEvents.EnemyAttackRequest = enemyAttackRequestRemote
 else
     -- Client: Wait for the RemoteFunctions to be created by server (existing)
     local dragRequestRemote = ReplicatedStorage:WaitForChild("DragRequest")
@@ -182,6 +188,9 @@ else
     -- Client: Wait for animation system RemoteEvents
     local setupEnemyAnimationsRemote = ReplicatedStorage:WaitForChild("SetupEnemyAnimations")
     local enemyAIStateUpdateRemote = ReplicatedStorage:WaitForChild("EnemyAIStateUpdate")
+    
+    -- Client: Wait for enemy attack validation RemoteEvent
+    local enemyAttackRequestRemote = ReplicatedStorage:WaitForChild("EnemyAttackRequest")
     
     print("Client found DragRequest RemoteFunction") -- Debug
     print("Client found InventoryRequest RemoteFunction") -- Debug
@@ -237,6 +246,9 @@ else
     -- Animation system remotes
     RemoteEvents.SetupEnemyAnimations = setupEnemyAnimationsRemote
     RemoteEvents.EnemyAIStateUpdate = enemyAIStateUpdateRemote
+    
+    -- Enemy attack validation remote
+    RemoteEvents.EnemyAttackRequest = enemyAttackRequestRemote
 end
 
 return RemoteEvents 

@@ -13,20 +13,14 @@ function Breakable.new(config)
         
         -- Drop configuration
         dropItems = config.dropItems or {},
-        respawnTime = config.respawnTime or 300, -- 5 minutes default
         
         -- State
         isBroken = false,
         lastDamageTime = 0,
-        respawnTimer = 0,
         
         -- Visual/Audio
         breakAnimation = config.breakAnimation or "break",
-        soundEffect = config.soundEffect or "break",
-        
-        -- Internal
-        originalCFrame = nil,
-        originalParent = nil
+        soundEffect = config.soundEffect or "break"
     }, Breakable)
     
     return self
@@ -76,23 +70,6 @@ end
 -- Get drop items
 function Breakable:GetDropItems()
     return self.dropItems
-end
-
--- Start respawn timer
-function Breakable:StartRespawn()
-    self.respawnTimer = tick() + self.respawnTime
-end
-
--- Check if respawn timer is complete
-function Breakable:ShouldRespawn()
-    return self.isBroken and tick() >= self.respawnTimer
-end
-
--- Reset to full health (for respawning)
-function Breakable:Reset()
-    self.health = self.maxHealth
-    self.isBroken = false
-    self.respawnTimer = 0
 end
 
 return Breakable 

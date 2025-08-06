@@ -27,23 +27,6 @@ local MAX_WEIGHT = 1.0 -- Maximum weight for animations
 function EnemyAnimationSystem.Initialize()
     print("🎭 EnemyAnimationSystem: Initializing client-side animation system")
     
-    -- Set up simple RemoteEvent listener for AI state updates
-    local RemoteEvents = require(ReplicatedStorage.Shared.RemoteEvents)
-    if RemoteEvents.EnemyAIStateUpdate then
-        RemoteEvents.EnemyAIStateUpdate.OnClientEvent:Connect(function(enemyModel, entityId, newState)
-            EnemyAnimationSystem.UpdateEnemyAIState(enemyModel, entityId, newState)
-        end)
-        print("✅ EnemyAnimationSystem: Connected to AI state updates")
-    end
-    
-    -- Set up simple RemoteEvent listener for animation setup
-    if RemoteEvents.SetupEnemyAnimations then
-        RemoteEvents.SetupEnemyAnimations.OnClientEvent:Connect(function(enemyModel, entityId)
-            EnemyAnimationSystem.SetupEnemyAnimations(enemyModel, entityId)
-        end)
-        print("✅ EnemyAnimationSystem: Connected to animation setup")
-    end
-    
     -- Set up cleanup loop
     RunService.Heartbeat:Connect(EnemyAnimationSystem._update)
     
@@ -187,6 +170,17 @@ function EnemyAnimationSystem.SetupEnemyAnimations(enemyModel, entityId)
                         tracks[state].Priority = Enum.AnimationPriority.Action -- Higher priority than movement
                     end
                     
+                    -- Special handling for attack animation
+                    if state == "attack" then
+                        tracks[state].Looped = false -- Attack animation should not loop
+                        tracks[state].Priority = Enum.AnimationPriority.Action -- Higher priority than movement
+                        
+                        -- Connect to Stopped event to return to previous state
+                        tracks[state].Stopped:Connect(function()
+                            EnemyAnimationSystem._returnFromAttackAnimation(enemyModel)
+                        end)
+                    end
+                    
                     print("🎭 EnemyAnimationSystem: Loaded", state, "animation track successfully")
                 else
                     print("❌ EnemyAnimationSystem: Failed to load", state, "animation:", result)
@@ -195,42 +189,43 @@ function EnemyAnimationSystem.SetupEnemyAnimations(enemyModel, entityId)
         end
     end
     
-    -- Set up background idle animation (similar to Roblox's default Animate script)
-    local backgroundIdleTrack1 = nil
-    local backgroundIdleTrack2 = nil
+    -- Set up manual animation system for walk and idle
+    local walkAnimation = Instance.new("Animation")
+    walkAnimation.AnimationId = "rbxassetid://121278793466470" -- Walk/run animation
     
-    -- Create background idle animations
-    local success1, result1 = pcall(function()
-        local animation1 = Instance.new("Animation")
-        animation1.AnimationId = "rbxassetid://136904906232786" -- Background idle animation 1
-        return animator:LoadAnimation(animation1)
-    end)
+    local idleAnimation1 = Instance.new("Animation")
+    idleAnimation1.AnimationId = "rbxassetid://136904906232786" -- Idle animation 1
     
-    local success2, result2 = pcall(function()
-        local animation2 = Instance.new("Animation")
-        animation2.AnimationId = "rbxassetid://131783126711981" -- Background idle animation 2
-        return animator:LoadAnimation(animation2)
-    end)
+    local idleAnimation2 = Instance.new("Animation")
+    idleAnimation2.AnimationId = "rbxassetid://131783126711981" -- Idle animation 2
     
-    if success1 then
-        backgroundIdleTrack1 = result1
-        backgroundIdleTrack1.Looped = true
-        backgroundIdleTrack1.Priority = Enum.AnimationPriority.Idle
-        backgroundIdleTrack1:Play()
-        print("🎭 EnemyAnimationSystem: Started background idle animation 1 for enemy:", enemyModel.Name)
-    else
-        print("⚠️ EnemyAnimationSystem: Failed to load background idle animation 1:", result1)
-    end
+    -- Load animation tracks
+    local walkTrack = animator:LoadAnimation(walkAnimation)
+    local idleTrack1 = animator:LoadAnimation(idleAnimation1)
+    local idleTrack2 = animator:LoadAnimation(idleAnimation2)
     
-    if success2 then
-        backgroundIdleTrack2 = result2
-        backgroundIdleTrack2.Looped = true
-        backgroundIdleTrack2.Priority = Enum.AnimationPriority.Idle
-        backgroundIdleTrack2:Play()
-        print("🎭 EnemyAnimationSystem: Started background idle animation 2 for enemy:", enemyModel.Name)
-    else
-        print("⚠️ EnemyAnimationSystem: Failed to load background idle animation 2:", result2)
-    end
+    -- Configure tracks
+    walkTrack.Priority = Enum.AnimationPriority.Movement
+    walkTrack.Looped = true -- Walk animation should loop when playing
+    idleTrack1.Priority = Enum.AnimationPriority.Idle
+    idleTrack2.Priority = Enum.AnimationPriority.Idle
+    
+    -- Set default Humanoid Animator idle animations to prevent animation gaps
+    -- These will always play in the background when no other animation is active
+    local defaultIdle1 = humanoid:LoadAnimation(idleAnimation1)
+    local defaultIdle2 = humanoid:LoadAnimation(idleAnimation2)
+    defaultIdle1.Looped = true
+    defaultIdle2.Looped = true
+    defaultIdle1.Priority = Enum.AnimationPriority.Idle -- Lowest priority so movement can override
+    defaultIdle2.Priority = Enum.AnimationPriority.Idle -- Lowest priority so movement can override
+    
+    -- Start the default idle animations
+    defaultIdle1:Play()
+    defaultIdle2:Play()
+    
+    print("🎭 EnemyAnimationSystem: Set and started default Humanoid idle animations for enemy:", enemyModel.Name)
+    
+    print("🎭 EnemyAnimationSystem: Set up manual animation system for enemy:", enemyModel.Name)
     
     -- Store animation data
     enemyAnimations[enemyModel] = {
@@ -243,8 +238,11 @@ function EnemyAnimationSystem.SetupEnemyAnimations(enemyModel, entityId)
         currentIdleAnimation = nil,
         idleAnimationStartTime = 0,
         entityId = entityId, -- Store the entity ID
-        backgroundIdleTrack1 = backgroundIdleTrack1,
-        backgroundIdleTrack2 = backgroundIdleTrack2,
+        walkTrack = walkTrack,
+        idleTrack1 = idleTrack1,
+        idleTrack2 = idleTrack2,
+        defaultIdle1 = defaultIdle1, -- Store default idle animations
+        defaultIdle2 = defaultIdle2,
         -- Transition data removed - animations now change instantly
         aiState = "idle" -- Initialize AI state
     }
@@ -275,57 +273,34 @@ function EnemyAnimationSystem._playRandomIdleAnimation(enemyModel)
         return
     end
     
-    -- Check if we should play a new idle animation (continuous playing during idle state)
-    local currentTime = tick()
-    local shouldPlayNewAnimation = false
-    
-    -- If no current animation is playing, start a new one
-    if not animationData.currentIdleAnimation or not animationData.currentIdleAnimation.track.IsPlaying then
-        shouldPlayNewAnimation = true
-    else
-        -- If current animation has been playing for a while, consider playing a new one
-        local animationStartTime = animationData.idleAnimationStartTime or currentTime
-        local animationElapsed = currentTime - animationStartTime
-        
-        -- Get the duration of the current animation
-        local currentAnimation = animationData.currentIdleAnimation
-        if currentAnimation and currentAnimation.duration then
-            local minDuration = currentAnimation.duration[1] or 2.0
-            local maxDuration = currentAnimation.duration[2] or 4.0
-            local avgDuration = (minDuration + maxDuration) / 2
-            
-            -- If animation has been playing longer than average duration, play a new one
-            if animationElapsed >= avgDuration then
-                shouldPlayNewAnimation = true
-            end
-        end
+    -- If we already have a current idle animation playing, don't change it
+    if animationData.currentIdleAnimation and animationData.currentIdleAnimation.track.IsPlaying then
+        return
     end
     
-    if shouldPlayNewAnimation then
-        -- Stop current idle animation if playing
-        if animationData.currentIdleAnimation and animationData.currentIdleAnimation.track.IsPlaying then
-            animationData.currentIdleAnimation.track:Stop()
-        end
+    -- Stop any current idle animation
+    if animationData.currentIdleAnimation and animationData.currentIdleAnimation.track.IsPlaying then
+        animationData.currentIdleAnimation.track:Stop()
+    end
+    
+    -- Select random idle animation (only when entering idle state or when no animation is playing)
+    local selectedAnimation = EnemyAnimationSystem._selectWeightedRandomIdleAnimation(
+        animationData.idleAnimations, 
+        animationData.lastIdlePlayedTimes
+    )
+    
+    if selectedAnimation then
+        -- Play the selected animation
+        selectedAnimation.track:Play()
+        animationData.currentIdleAnimation = selectedAnimation
+        animationData.idleAnimationStartTime = tick()
         
-        -- Select random idle animation
-        local selectedAnimation = EnemyAnimationSystem._selectWeightedRandomIdleAnimation(
-            animationData.idleAnimations, 
-            animationData.lastIdlePlayedTimes
-        )
+        -- Update last played time
+        animationData.lastIdlePlayedTimes[selectedAnimation.index] = tick()
         
-        if selectedAnimation then
-            -- Play the selected animation
-            selectedAnimation.track:Play()
-            animationData.currentIdleAnimation = selectedAnimation
-            animationData.idleAnimationStartTime = currentTime
-            
-            -- Update last played time
-            animationData.lastIdlePlayedTimes[selectedAnimation.index] = currentTime
-            
-            print("🎭 EnemyAnimationSystem: Playing idle animation", selectedAnimation.index, "for enemy:", enemyModel.Name)
-        else
-            print("⚠️ EnemyAnimationSystem: No idle animation selected for enemy:", enemyModel.Name)
-        end
+        print("🎭 EnemyAnimationSystem: Playing idle animation", selectedAnimation.index, "for enemy:", enemyModel.Name)
+    else
+        print("⚠️ EnemyAnimationSystem: No idle animation selected for enemy:", enemyModel.Name)
     end
 end
 
@@ -349,34 +324,94 @@ function EnemyAnimationSystem._connectHumanoidEvents(enemyModel, humanoid)
     print("🔗 EnemyAnimationSystem: Connecting events for enemy:", enemyModel.Name)
     
     -- Monitor for death (no death animations, just cleanup)
-    
-    -- Monitor for death (no death animations, just cleanup)
     humanoid.Died:Connect(function()
         -- Clean up animations when enemy dies
         EnemyAnimationSystem.CleanupEnemyAnimations(enemyModel)
     end)
     
+    -- Monitor movement state for walk animation
+    local lastPosition = humanoid.RootPart and humanoid.RootPart.Position or Vector3.new(0, 0, 0)
+    local isMoving = false
+    local movementThreshold = 0.1 -- Minimum distance to consider as movement
+    
+    -- Check movement every frame
+    local connection
+    connection = game:GetService("RunService").Heartbeat:Connect(function()
+        if not humanoid or not humanoid.Parent or not humanoid.RootPart then
+            connection:Disconnect()
+            return
+        end
+        
+        local currentPosition = humanoid.RootPart.Position
+        local distance = (currentPosition - lastPosition).Magnitude
+        local wasMoving = isMoving
+        isMoving = distance > movementThreshold
+        
+        -- Update walk animation based on movement
+        if isMoving and not wasMoving then
+            -- Started moving
+            if animationData.walkTrack and not animationData.walkTrack.IsPlaying then
+                animationData.walkTrack:Play()
+                print("🎭 EnemyAnimationSystem: Started walk animation for", enemyModel.Name, "- movement detected")
+            end
+        elseif not isMoving and wasMoving then
+            -- Stopped moving
+            if animationData.walkTrack and animationData.walkTrack.IsPlaying then
+                animationData.walkTrack:Stop()
+                print("🎭 EnemyAnimationSystem: Stopped walk animation for", enemyModel.Name, "- movement stopped")
+            end
+        end
+        
+        lastPosition = currentPosition
+    end)
+    
     print("✅ EnemyAnimationSystem: Connected events for enemy:", enemyModel.Name)
 end
 
--- Update enemy animation based on AI state
+-- Update enemy animation based on AI state (walk animation now handled by movement detection)
 function EnemyAnimationSystem._updateEnemyAnimation(enemyModel)
     local animationData = enemyAnimations[enemyModel]
     if not animationData then return end
     
+    -- Check if enemy is dead
+    local entityId = animationData.entityId
+    local enemyFolder = workspace:FindFirstChild("Enemies"):FindFirstChild(tostring(entityId))
+    if enemyFolder and enemyFolder:GetAttribute("Dead") == true then
+        -- Stop all animations for dead enemies
+        for _, track in pairs(animationData.tracks) do
+            if track.IsPlaying then
+                track:Stop()
+            end
+        end
+        
+        -- Stop idle animations
+        if animationData.currentIdleAnimation and animationData.currentIdleAnimation.track.IsPlaying then
+            animationData.currentIdleAnimation.track:Stop()
+            animationData.currentIdleAnimation = nil
+        end
+        
+        -- Stop walk animation
+        if animationData.walkTrack and animationData.walkTrack.IsPlaying then
+            animationData.walkTrack:Stop()
+        end
+        
+        print("🎭 EnemyAnimationSystem: Stopped all animations for dead enemy:", enemyModel.Name)
+        return
+    end
+    
     local currentState = animationData.currentState
     local newState = "idle"
     
-    -- Determine animation state based on AI state
+    -- Determine animation state based on AI state (excluding walk which is movement-based)
     if animationData.aiState == "idle" then
         newState = "idle"
-    elseif animationData.aiState == "patrol" then
-        newState = "walk"
-    elseif animationData.aiState == "chase" then
-        newState = "walk"
     elseif animationData.aiState == "talking" then
         newState = "talk"
+    elseif animationData.aiState == "patrol" then
+        newState = "idle" -- Patrol uses idle animations when not moving
     end
+    -- Note: Walk animation is now handled by movement detection, not AI state
+    -- Note: "attack" animations are handled via client raycast, not AI state changes
     
     -- Only change animation if state actually changed
     if newState ~= currentState then
@@ -395,6 +430,20 @@ end
 
 -- Transition functions removed - animations now change instantly
 
+-- Return from attack animation to previous state
+function EnemyAnimationSystem._returnFromAttackAnimation(enemyModel)
+    local animationData = enemyAnimations[enemyModel]
+    if not animationData then return end
+    
+    print("🎭 EnemyAnimationSystem: Attack animation finished for", enemyModel.Name, "returning to AI state:", animationData.aiState)
+    
+    -- Reset current state to allow proper transitions
+    animationData.currentState = "idle"
+    
+    -- Return to the appropriate animation based on AI state
+    EnemyAnimationSystem._updateEnemyAnimation(enemyModel)
+end
+
 -- Change animation state instantly (no crossfade)
 function EnemyAnimationSystem._changeAnimation(enemyModel, newState)
     local animationData = enemyAnimations[enemyModel]
@@ -411,21 +460,24 @@ function EnemyAnimationSystem._changeAnimation(enemyModel, newState)
         end
     end
     
-    -- Stop idle animations if transitioning away from idle
-    if currentState == "idle" and newState ~= "idle" then
+    -- Roblox handles idle animations automatically - no need to stop them manually
+    
+    -- Handle different animation states
+    if newState == "idle" then
+        -- Use our complex idle animation system
+        EnemyAnimationSystem._playRandomIdleAnimation(enemyModel)
+    elseif newState == "walk" then
+        -- Walk animation is now handled by movement detection, not AI state
+        -- This state is no longer used for walk animations
+        print("🎭 EnemyAnimationSystem: Walk state triggered but movement detection handles walk animations")
+    else
+        -- Stop idle animations when transitioning to special states (talk, attack, etc.)
         if animationData.currentIdleAnimation and animationData.currentIdleAnimation.track.IsPlaying then
-            print("🎭 EnemyAnimationSystem: Stopping idle animation for", enemyModel.Name)
             animationData.currentIdleAnimation.track:Stop()
             animationData.currentIdleAnimation = nil
         end
-    end
-    
-    -- Handle idle state specially
-    if newState == "idle" then
-        -- Play idle animation immediately
-        EnemyAnimationSystem._playRandomIdleAnimation(enemyModel)
-    else
-        -- Play the new animation immediately
+        
+        -- Play the new animation immediately (talk, attack, etc.)
         if animationData.tracks[newState] then
             animationData.tracks[newState]:Play()
             print("🎭 EnemyAnimationSystem: Started", newState, "animation for", enemyModel.Name)
@@ -447,6 +499,44 @@ function EnemyAnimationSystem.UpdateEnemyAIState(enemyModel, entityId, newState)
     
     local oldState = animationData.aiState
     animationData.aiState = newState
+    
+    -- Handle attack state specially (triggered by client raycast)
+    if newState == "attack" then
+        -- Stop any current animations
+        for _, track in pairs(animationData.tracks) do
+            if track.IsPlaying then
+                track:Stop()
+            end
+        end
+        
+        -- Stop idle animations
+        if animationData.currentIdleAnimation and animationData.currentIdleAnimation.track.IsPlaying then
+            animationData.currentIdleAnimation.track:Stop()
+            animationData.currentIdleAnimation = nil
+        end
+        
+        -- Play attack animation
+        if animationData.tracks["attack"] then
+            animationData.tracks["attack"]:Play()
+            print("🎭 EnemyAnimationSystem: Started attack animation for", enemyModel.Name)
+            
+            -- Reset to chase state after attack animation
+            task.delay(1.0, function()
+                if animationData and animationData.aiState == "attack" then
+                    animationData.aiState = "chase"
+                    animationData.currentState = "idle" -- Reset current state
+                    EnemyAnimationSystem._updateEnemyAnimation(enemyModel)
+                    print("🎭 EnemyAnimationSystem: Reset to chase state for", enemyModel.Name)
+                end
+            end)
+        else
+            print("⚠️ EnemyAnimationSystem: No attack animation track found for", enemyModel.Name)
+        end
+        
+        -- Update current state
+        animationData.currentState = newState
+        return
+    end
     
     -- If transitioning away from idle, stop any playing idle animations
     if oldState == "idle" and newState ~= "idle" then
@@ -485,13 +575,26 @@ function EnemyAnimationSystem.CleanupEnemyAnimations(enemyModel)
         end
     end
     
-    -- Stop background idle animations
-    if animationData.backgroundIdleTrack1 and animationData.backgroundIdleTrack1.IsPlaying then
-        animationData.backgroundIdleTrack1:Stop()
+    -- Stop manual idle and walk animations
+    if animationData.idleTrack1 and animationData.idleTrack1.IsPlaying then
+        animationData.idleTrack1:Stop()
     end
     
-    if animationData.backgroundIdleTrack2 and animationData.backgroundIdleTrack2.IsPlaying then
-        animationData.backgroundIdleTrack2:Stop()
+    if animationData.idleTrack2 and animationData.idleTrack2.IsPlaying then
+        animationData.idleTrack2:Stop()
+    end
+    
+    if animationData.walkTrack and animationData.walkTrack.IsPlaying then
+        animationData.walkTrack:Stop()
+    end
+    
+    -- Stop default idle animations
+    if animationData.defaultIdle1 and animationData.defaultIdle1.IsPlaying then
+        animationData.defaultIdle1:Stop()
+    end
+    
+    if animationData.defaultIdle2 and animationData.defaultIdle2.IsPlaying then
+        animationData.defaultIdle2:Stop()
     end
     
     -- Remove from tracking

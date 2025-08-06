@@ -1,8 +1,9 @@
 -- src/server/systems/EnemySpawnSystem.lua
 --[[
-	This system queries for entities with Spawner components
+	This system creates enemy folders with detection parts
 	and spawns enemies based on the rules defined in the Spawner.
-	Only spawns when players are within activation range.
+	Event-driven spawning - no more 3-second loops.
+	Each enemy has its own movement restriction zone.
 --]]
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -29,86 +30,65 @@ local EnemyDefinitions = require(ReplicatedStorage.Shared.EnemyDefinitions)
 local EnemySpawnSystem = {}
 EnemySpawnSystem.name = "EnemySpawnSystem"
 
--- Configuration
-local CONFIG = {
-	UPDATE_INTERVAL = 3.0, -- Check spawns every 3 seconds - much less frequent
-	MAX_SPAWNS_PER_FRAME = 2 -- Reduce concurrent spawns for performance
-}
-
--- System state
-local lastUpdate = 0
-
 -- Initialize system
 function EnemySpawnSystem.initialize()
-	lastUpdate = 0
-	return true
-end
-
--- Check if any player is within activation range of the spawner
-local function isAnyPlayerNearSpawner(spawnerPosition, activationRange)
-	for _, player in pairs(Players:GetPlayers()) do
-		if player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
-			local playerPosition = player.Character.HumanoidRootPart.Position
-			local distance = (playerPosition - spawnerPosition).Magnitude
-			if distance <= activationRange then
-				return true
-			end
-		end
+	-- Create Enemies folder if it doesn't exist
+	if not workspace:FindFirstChild("Enemies") then
+		local enemiesFolder = Instance.new("Folder")
+		enemiesFolder.Name = "Enemies"
+		enemiesFolder.Parent = workspace
 	end
-	return false
+	
+	-- Initialize global movement zones table
+	_G.enemyMovementZones = _G.enemyMovementZones or {}
+	
+	return true
 end
 
 local function getRandomPositionInRadius(center, radius)
 	local angle = math.random() * 2 * math.pi
 	local dist = math.random() * radius
-	return center + Vector3.new(dist * math.cos(angle), 0, dist * math.sin(angle))
+	local basePosition = center + Vector3.new(dist * math.cos(angle), 0, dist * math.sin(angle))
+	
+	-- Raycast to find ground height
+	local raycastResult = workspace:Raycast(
+		Vector3.new(basePosition.X, 1000, basePosition.Z), -- Start high up
+		Vector3.new(0, -2000, 0), -- Raycast down
+		RaycastParams.new()
+	)
+	
+	if raycastResult then
+		-- Spawn 3 units above ground
+		return Vector3.new(basePosition.X, raycastResult.Position.Y + 3, basePosition.Z)
+	else
+		-- Fallback to base position if raycast fails
+		return basePosition
+	end
 end
 
-function EnemySpawnSystem.update(deltaTime)
-	local currentTime = tick()
-	if currentTime - lastUpdate < CONFIG.UPDATE_INTERVAL then
-		return
-	end
-	lastUpdate = currentTime
-	
-	local spawnsProcessed = 0
+-- Spawn all enemies from all spawners (call this once at game start)
+function EnemySpawnSystem.spawnAllEnemies()
+	print("🎯 EnemySpawnSystem: Starting one-time enemy spawn...")
 	
 	-- Get all entities with Spawner components
 	local spawnerEntities = EntityManager.getEntitiesWith("Spawner")
+	print("🎯 EnemySpawnSystem: Found", #spawnerEntities, "spawners")
 	
-	-- Debug: Print spawner count every 10 seconds
-	if currentTime % 10 < 3.1 then -- Will print roughly every 10 seconds due to UPDATE_INTERVAL
-		print("🎯 EnemySpawnSystem: Found", #spawnerEntities, "spawners")
-	end
+	local totalSpawned = 0
 	
 	for _, entityId in ipairs(spawnerEntities) do
-		if spawnsProcessed >= CONFIG.MAX_SPAWNS_PER_FRAME then
-			break
-		end
-		
 		local spawner = EntityManager.getComponent(entityId, "Spawner")
 		
 		if not spawner or not spawner.centerPosition then
-			-- Skip this entity - no spawner or missing center position
-		else
-			-- CHECK: Only proceed if a player is within activation range
-			local activationRange = spawner.activationRange or 60 -- Default 60 studs
-			local anyPlayerNearby = isAnyPlayerNearSpawner(spawner.centerPosition, activationRange)
-			
-			if not anyPlayerNearby then
-				-- Skip this spawner - no players nearby
-			elseif spawner.spawnType == "once" and spawner.hasSpawned then
-				-- Skip this spawner - one-time spawner has already activated
-			elseif spawner.spawnType == "continuous" and os.clock() - spawner.lastSpawnTime < spawner.cooldown then
-				-- Skip this spawner - continuous spawner still in cooldown
-			else
-
+			warn("Spawner", entityId, "missing centerPosition")
+			continue
+		end
+		
 		-- Clear out any dead entities from the spawner's list
 		for i = #spawner.spawnedEntities, 1, -1 do
 			local spawnedEntityId = spawner.spawnedEntities[i]
-			-- Check if entity still exists (check for Model component)
-			local model = EntityManager.getComponent(spawnedEntityId, "Model")
-			if not model or not model.model or not model.model.Parent then
+			local enemyAI = EntityManager.getComponent(spawnedEntityId, "EnemyAI")
+			if not enemyAI then
 				table.remove(spawner.spawnedEntities, i)
 			end
 		end
@@ -117,8 +97,9 @@ function EnemySpawnSystem.update(deltaTime)
 		local spawnedCount = 0
 
 		if #spawner.spawnedEntities >= spawner.countRange.max then
-			-- Skip this entity - already at max spawns
-		else
+			print("🎯 Spawner", entityId, "already at max spawns")
+			continue
+		end
 
 		for i = 1, enemiesToSpawn do
 			if #spawner.spawnedEntities >= spawner.countRange.max then
@@ -127,22 +108,17 @@ function EnemySpawnSystem.update(deltaTime)
 
 			local enemyId
 			if #spawner.enemies == 1 and spawner.enemies[1] == "random" then
-				-- Use EnemyDefinitions to get a random enemy
 				enemyId = EnemyDefinitions:GetRandomEnemy()
 			elseif #spawner.enemies == 1 and spawner.enemies[1]:find("_type_") then
-				-- Handle type-based spawning (e.g., "melee_type_random")
 				local enemyType = spawner.enemies[1]:match("(%w+)_type_")
 				if enemyType then
 					enemyId = EnemyDefinitions:GetRandomEnemyOfType(enemyType)
 				end
 			else
-				-- Use specific enemy from spawner list
 				local spawnChoice = spawner.enemies[math.random(#spawner.enemies)]
-				-- Validate that the enemy exists in definitions
 				if EnemyDefinitions:GetEnemy(spawnChoice) then
 					enemyId = spawnChoice
 				else
-					-- Fallback to random if enemy doesn't exist
 					warn("Enemy not found in definitions: " .. tostring(spawnChoice) .. ". Using random enemy.")
 					enemyId = EnemyDefinitions:GetRandomEnemy()
 				end
@@ -157,10 +133,6 @@ function EnemySpawnSystem.update(deltaTime)
 					-- Create new entity
 					local newEnemyId = EntityManager.createEntity()
 					
-					-- Add temporary spawn position component (ModelCreationSystem will use and remove this)
-					EntityManager.addComponent(newEnemyId, "SpawnPosition", 
-						{value = spawnPosition})
-					
 					-- Set homePosition to spawner center for patrol boundaries
 					if enemyComponents.EnemyAI then
 						enemyComponents.EnemyAI.homePosition = spawner.centerPosition
@@ -170,55 +142,82 @@ function EnemySpawnSystem.update(deltaTime)
 					enemyComponents.EnemyChat = Components.create("EnemyChat")
 					
 					-- Add all enemy components
-					print("🔧 Adding components for entity", newEnemyId, ":")
 					for componentType, componentData in pairs(enemyComponents) do
 						EntityManager.addComponent(newEnemyId, componentType, componentData)
-						print("   ✅ Added component:", componentType)
 					end
+					
+					-- Create enemy folder in workspace
+					local enemyFolder = Instance.new("Folder")
+					enemyFolder.Name = tostring(newEnemyId)
+					enemyFolder.Parent = workspace:FindFirstChild("Enemies")
+					
+					-- Create movement zone (this is also the detection zone)
+					local movementZone = Instance.new("Part")
+					movementZone.Name = "MovementZone"
+					movementZone.Size = Vector3.new(40, 1, 40) -- 40x1x40 stud flat movement/detection area
+					movementZone.Position = Vector3.new(spawnPosition.X, 0.5, spawnPosition.Z) -- Ground level
+					movementZone.Anchored = true
+					movementZone.CanCollide = false
+					movementZone.Transparency = 0.8 -- Semi-transparent for visibility
+					movementZone.Color = Color3.new(0, 1, 0) -- Green color for visibility
+					movementZone.Material = Enum.Material.Neon
+					movementZone.Parent = enemyFolder
+					
+					-- Store movement zone data in global table
+					_G.enemyMovementZones[newEnemyId] = {
+						cFrame = movementZone.CFrame,
+						size = movementZone.Size
+					}
+					
+					print("DEBUG: Created zone for enemy", newEnemyId)
+					print("  Spawn position:", spawnPosition)
+					print("  Zone center:", movementZone.CFrame.Position)
+					print("  Zone size:", movementZone.Size)
+					print("  Zone CFrame:", movementZone.CFrame)
+					
+					-- Destroy the part - we only need the data for mathematical detection
+					movementZone:Destroy()
+					
+					-- Set position attribute
+					enemyFolder:SetAttribute("Position", spawnPosition)
+					enemyFolder:SetAttribute("EnemyType", enemyId)
+					enemyFolder:SetAttribute("AIState", "idle")
+					
+					-- Set health attributes
+					local enemyDef = EnemyDefinitions:GetEnemy(enemyId)
+					local maxHealth = enemyDef and enemyDef.health or 100
+					enemyFolder:SetAttribute("Health", maxHealth)
+					enemyFolder:SetAttribute("MaxHealth", maxHealth)
 					
 					table.insert(spawner.spawnedEntities, newEnemyId)
 					spawnedCount = spawnedCount + 1
+					totalSpawned = totalSpawned + 1
 					
-					print(string.format("🎯 Spawned %s (%s) at %s (spawner type: %s)", 
-						enemyId, 
-						enemyComponents.enemyType or "unknown",
-						tostring(spawnPosition),
-						spawner.spawnType or "unknown"))
-					
-					-- Debug: Print enemy stats for verification
-					local enemyDef = EnemyDefinitions:GetEnemy(enemyId)
-					if enemyDef and enemyDef.customConfig then
-						local cfg = enemyDef.customConfig
-						print(string.format("   📊 Stats: Speed=%d, Damage=%d, AttackSpeed=%.1f, DetectRange=%d", 
-							cfg.moveSpeed or 16,
-							cfg.damage or 10,
-							cfg.attackSpeed or 1,
-							cfg.detectionRange or 30))
-					end
+					print(string.format("🎯 Spawned %s at %s", enemyId, tostring(spawnPosition)))
 				else
 					warn("Failed to create components for enemy: " .. tostring(enemyId))
 				end
 			end
 		end
 
-		if spawnedCount > 0 then
-			-- Update spawner state based on type
-			if spawner.spawnType == "once" then
-				-- Mark one-time spawner as having spawned
-				spawner.hasSpawned = true
-				print("🎯 One-time spawner", entityId, "has completed spawning and is now inactive")
-			elseif spawner.spawnType == "continuous" then
-				-- Update continuous spawner's last spawn time
-				spawner.lastSpawnTime = os.clock()
-			end
-			
-			EntityManager.addComponent(entityId, "Spawner", spawner)
-			spawnsProcessed = spawnsProcessed + 1
+		-- Update spawner state
+		if spawner.spawnType == "once" then
+			spawner.hasSpawned = true
+		elseif spawner.spawnType == "continuous" then
+			spawner.lastSpawnTime = os.clock()
 		end
-		end -- Close the else block for max spawns check
-		end -- Close the else block for cooldown/proximity check
-		end -- Close the else block for spawner validation
+
+		EntityManager.addComponent(entityId, "Spawner", spawner)
+
+		if spawnedCount > 0 then
+			print("🎯 EnemySpawnSystem: Spawned", spawnedCount, "enemies from spawner", entityId)
+		end
 	end
+	
+	print("🎯 EnemySpawnSystem: Total enemies spawned:", totalSpawned)
 end
+
+-- Remove the update function - no more 3-second loops
+-- function EnemySpawnSystem.update(deltaTime) -- REMOVED
 
 return EnemySpawnSystem 

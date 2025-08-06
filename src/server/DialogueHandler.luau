@@ -161,19 +161,7 @@ function DialogueHandler:ExecuteAction(player, npcId, action)
 			self:EndDialogue(player)
 		end
 		
-	elseif action == "enable_combat" then
-		-- Enable princess combat mode
-		NPCManager:EnablePrincessCombat()
-		if responseDialogue then
-			-- Show response, then auto-end dialogue after delay
-			RemoteEvents.DisplayDialogue:FireClient(player, npcId, responseDialogue)
-			task.spawn(function()
-				task.wait(3)
-				self:EndDialogue(player)
-			end)
-		else
-			self:EndDialogue(player)
-		end
+
 		
 	elseif action == "open_trade" then
 		-- End dialogue immediately to prevent cursor conflicts with trader shop
@@ -268,10 +256,10 @@ function DialogueHandler:ExecuteAction(player, npcId, action)
 				
 				RemoteEvents.DisplayDialogue:FireClient(player, npcId, missingResponse)
 				
-				task.spawn(function()
-					task.wait(4)
-					self:EndDialogue(player)
-				end)
+							task.spawn(function()
+				task.wait(2)
+				self:EndDialogue(player)
+			end)
 			end
 		else
 			-- No current request (shouldn't happen)
@@ -283,7 +271,7 @@ function DialogueHandler:ExecuteAction(player, npcId, action)
 			RemoteEvents.DisplayDialogue:FireClient(player, npcId, errorResponse)
 			
 			task.spawn(function()
-				task.wait(3)
+				task.wait(2)
 				self:EndDialogue(player)
 			end)
 		end
@@ -294,7 +282,7 @@ function DialogueHandler:ExecuteAction(player, npcId, action)
 			-- Show response, then auto-end dialogue after delay
 			RemoteEvents.DisplayDialogue:FireClient(player, npcId, responseDialogue)
 			task.spawn(function()
-				task.wait(5) -- Longer delay for story
+				task.wait(2) -- Standard delay for story
 				self:EndDialogue(player)
 			end)
 		end

@@ -34,7 +34,8 @@ EnemyAnimationConfig.ANIMATIONS = {
         }
     },
     walk = "rbxassetid://121278793466470", -- Walk animation
-    talk = "rbxassetid://110570302053526" -- Talk animation
+    talk = "rbxassetid://110570302053526", -- Talk animation
+    attack = "rbxassetid://101145568771829" -- Attack animation
 }
 
 -- Animation settings

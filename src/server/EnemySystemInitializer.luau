@@ -72,7 +72,7 @@ end
 
 -- Import enemy systems (with error handling)
 local EnemySystems = script.Parent.EnemySystems
-local EnemySpawnSystem, EnemyAISystem, EnemyCombatSystem, EnemyModelSystem
+local EnemySpawnSystem, EnemyAISystem
 
 local success, result = pcall(function()
     return require(EnemySystems.EnemySpawnSystem)
@@ -94,44 +94,53 @@ else
     error("❌ Failed to load EnemyAISystem: " .. tostring(result))
 end
 
-local success, result = pcall(function()
-    return require(EnemySystems.CombatSystem)
-end)
-if success then
-    EnemyCombatSystem = result
-    print("✅ EnemyCombatSystem loaded successfully")
-else
-    error("❌ Failed to load EnemyCombatSystem: " .. tostring(result))
-end
-
-local success, result = pcall(function()
-    return require(EnemySystems.ModelCreationSystem)
-end)
-if success then
-    EnemyModelSystem = result
-    print("✅ EnemyModelSystem loaded successfully")
-else
-    error("❌ Failed to load EnemyModelSystem: " .. tostring(result))
-end
-
 -- Test enemy ECS core
 print("📦 Enemy ECS loaded: EntityManager, EnemySystemManager, EnemyComponents")
 
 -- Only register systems if all modules loaded successfully
 if EntityManager and EnemySystemManager and EnemyComponents and 
-   EnemySpawnSystem and EnemyAISystem and EnemyCombatSystem and EnemyModelSystem then
+   EnemySpawnSystem and EnemyAISystem then
    
-    -- Register enemy systems (MovementSystem is now a service called by AISystem)
-    EnemySystemManager.registerSystem(EnemySpawnSystem)
+    -- Initialize EnemySpawnSystem (one-time setup)
+    EnemySpawnSystem.initialize()
+    print("✅ EnemySpawnSystem initialized")
+    
+    -- Delay enemy spawning until after spawners are created
+    task.spawn(function()
+        -- Wait for spawners to be created by SpawnerSetup
+        local maxWaitTime = 5 -- Maximum 5 seconds to wait
+        local waitTime = 0
+        
+        while waitTime < maxWaitTime do
+            local spawnerEntities = EntityManager.getEntitiesWith("Spawner")
+            if #spawnerEntities > 0 then
+                print("✅ Found", #spawnerEntities, "spawners, proceeding with enemy spawning")
+                break
+            end
+            
+            wait(0.1)
+            waitTime = waitTime + 0.1
+        end
+        
+        if waitTime >= maxWaitTime then
+            warn("⚠️ Timeout waiting for spawners, spawning enemies anyway")
+        end
+        
+        -- Spawn all enemies once at startup (no more 3-second loops)
+        EnemySpawnSystem.spawnAllEnemies()
+        print("✅ All enemies spawned (one-time event)")
+    end)
+    
+    -- Register enemy systems (SimpleMovementSystem is used directly by chase handlers)
+    -- Note: EnemySpawnSystem is no longer registered since it doesn't have an update function
     EnemySystemManager.registerSystem(EnemyAISystem)
-    EnemySystemManager.registerSystem(EnemyCombatSystem)
-    EnemySystemManager.registerSystem(EnemyModelSystem)
 
     -- Start enemy system game loop
     EnemySystemManager.startGameLoop()
     
     print("✅ All enemy systems registered and started")
-    print("🏃 MovementSystem is now a service called by AISystem (not a standalone system)")
+    print("🏃 SimpleMovementSystem used directly by chase handlers (no service needed)")
+    print("🎯 EnemySpawnSystem: One-time spawn complete (no more update loops)")
 else
     warn("❌ Some enemy systems failed to load - enemy system disabled")
     return {initialized = false, error = "Failed to load enemy modules"}
@@ -156,8 +165,6 @@ return {
     initialized = true,
     systems = {
         EnemySpawnSystem,
-        EnemyAISystem,
-        EnemyCombatSystem,
-        EnemyModelSystem
+        EnemyAISystem
     }
 } 

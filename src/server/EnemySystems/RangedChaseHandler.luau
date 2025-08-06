@@ -22,11 +22,8 @@ end
 
 local EntityManager = require(ReplicatedStorage.Shared.EntityManager)
 
--- Import rotation utility
-local EnemyRotationUtility = require(script.Parent.EnemyRotationUtility)
-
--- Import MovementSystem for movement commands
-local MovementSystem = require(script.Parent.MovementSystem)
+-- Import SimpleMovementSystem for movement commands
+local SimpleMovementSystem = require(script.Parent.SimpleMovementSystem)
 
 -- Import DamageSystem for applying damage
 local DamageSystem = require(script.Parent.Parent.Systems.DamageSystem)
@@ -35,16 +32,9 @@ local RangedChaseHandler = {}
 
 -- Default configuration for ranged enemies (fallback values)
 local DEFAULT_RANGED_CONFIG = {
-    BURST_SIZE = 3,
-    SHOT_INTERVAL = 0.25,           -- 0.25 seconds between shots in burst
-    AIM_TIME = 0.2,                 -- 0.2 seconds to aim and capture target
-    POST_BURST_PAUSE = 0.5,         -- pause after burst before next action
-    REPOSITION_THRESHOLD = 8,        -- studs player must move to trigger reposition
-    OPTIMAL_DISTANCE = 25,           -- preferred shooting distance
-    
     -- Projectile settings
     PROJECTILE_SPEED = 70,           -- studs per second
-    PROJECTILE_DAMAGE = 15,          -- damage per projectile (45 total per burst)
+    PROJECTILE_DAMAGE = 15,          -- damage per projectile
     PROJECTILE_SIZE = Vector3.new(0.2, 0.2, 0.2),
     PROJECTILE_COLOR = Color3.fromRGB(255, 100, 50),  -- Orange-red
     PROJECTILE_LIFETIME = 3,         -- seconds before cleanup
@@ -65,12 +55,9 @@ local function getEnemyRangedConfig(entityId)
     
     local config = enemyType.config
     return {
-        BURST_SIZE = config.burstSize or DEFAULT_RANGED_CONFIG.BURST_SIZE,
-        SHOT_INTERVAL = config.shotInterval or DEFAULT_RANGED_CONFIG.SHOT_INTERVAL,
-        AIM_TIME = config.aimTime or DEFAULT_RANGED_CONFIG.AIM_TIME,
-        POST_BURST_PAUSE = config.postBurstPause or DEFAULT_RANGED_CONFIG.POST_BURST_PAUSE,
-        REPOSITION_THRESHOLD = config.repositionThreshold or DEFAULT_RANGED_CONFIG.REPOSITION_THRESHOLD,
-        OPTIMAL_DISTANCE = config.optimalDistance or DEFAULT_RANGED_CONFIG.OPTIMAL_DISTANCE,
+        -- Attack settings
+        ATTACK_COOLDOWN = config.attackCooldown or 1.0, -- Default 1 second cooldown
+        ATTACK_SPEED = config.attackSpeed or 1.0, -- Default 1.0 attacks per second
         
         -- Projectile settings
         PROJECTILE_SPEED = config.projectileSpeed or DEFAULT_RANGED_CONFIG.PROJECTILE_SPEED,
@@ -83,69 +70,60 @@ local function getEnemyRangedConfig(entityId)
 end
 
 -- Handle ranged enemy chase behavior (SERVICE - no state changes)
-function RangedChaseHandler.handleChase(entityId, enemyAI, model, closestPlayer, currentTime)
-    -- Validate inputs
-    if not closestPlayer or not closestPlayer.player then
+function RangedChaseHandler.handleChase(entityId, enemyAI, currentPosition, bestTarget, currentTime)
+    -- Validate inputs - trust AISystem validation
+    if not bestTarget or not bestTarget.target then
         return -- No valid target, but don't change state (AISystem handles that)
     end
     
-    -- Get enemy-specific ranges
-    local detectionRange = enemyAI.detectionRange
-    if not detectionRange then
-        warn("⚠️ No detectionRange defined for entity", entityId, "- cannot chase")
-        return
-    end
-    
-    -- Calculate distance to target
-    local currentPosition = model.part.Position
-    local targetPosition = closestPlayer.position
-    local distance = (currentPosition - targetPosition).Magnitude
-    
-    -- Check if we should give up chase
-    if distance > detectionRange then
-        return -- Target too far, but don't change state (AISystem handles that)
-    end
-    
-    -- Check chase timeout
-    local chaseTime = currentTime - (enemyAI.stateStartTime or currentTime)
-    if chaseTime >= 10 then -- 10 second timeout
-        return -- Timeout, but don't change state (AISystem handles that)
-    end
-    
-    -- Simple ranged behavior - just move toward player and shoot when in range
-    local attackRange = 5 -- Default attack range
+    -- Get enemy configuration
     local config = getEnemyRangedConfig(entityId)
     local baseSpeed = enemyAI.speed or 16
     
+    -- Simple ranged behavior - move to random position in zone and shoot when in range
+    local attackRange = 20 -- Default attack range
+    
+    -- Calculate distance to target for attack range check only
+    local targetPosition = bestTarget.position
+    local distance = (currentPosition - targetPosition).Magnitude
+    
     if distance <= attackRange then
         -- In range - stop and shoot
-        MovementSystem.stopMovement(entityId)
-        RangedChaseHandler._fireProjectile(entityId, closestPlayer, config)
+        SimpleMovementSystem.clearPosition(entityId)
+        
+        -- Play aim animation before shooting
+        local enemyFolder = workspace:FindFirstChild("Enemies"):FindFirstChild(tostring(entityId))
+        if enemyFolder then
+            enemyFolder:SetAttribute("AimAnimation", 135648359564667)
+            print("🎯 Ranged enemy", entityId, "playing aim animation before shooting")
+        end
+        
+        RangedChaseHandler._fireProjectile(entityId, bestTarget, config, enemyAI.state)
     else
-        -- Out of range - move toward player
-        local playerPosition = closestPlayer.position
-        local currentPosition = model.part.Position
-        
-        -- Calculate optimal tactical position
-        local directionToPlayer = (playerPosition - currentPosition).Unit
-        local optimalDistance = config.OPTIMAL_DISTANCE
-        local tacticalPosition = playerPosition - (directionToPlayer * optimalDistance)
-        
-        MovementSystem.moveToTacticalPosition(entityId, tacticalPosition, baseSpeed * 0.9, "tactical")
+        -- Out of range - move to random position in zone
+        local randomPosition = SimpleMovementSystem.getRandomPositionInZone(entityId)
+        if randomPosition then
+            SimpleMovementSystem.setPosition(entityId, randomPosition)
+        end
     end
 end
 
--- Phase-based functions removed - handlers are now stateless
-
 -- Fire a projectile at the target
-function RangedChaseHandler._fireProjectile(entityId, closestPlayer, config)
-    local model = EntityManager.getComponent(entityId, "Model")
-    if not model or not model.part then
+function RangedChaseHandler._fireProjectile(entityId, bestTarget, config, state)
+    -- Get current position from folder attribute
+    local enemyFolder = workspace:FindFirstChild("Enemies"):FindFirstChild(tostring(entityId))
+    if not enemyFolder then
+        warn("RangedChaseHandler: No enemy folder found for entity", entityId)
         return
     end
     
-    local startPosition = model.part.Position
-    local targetPosition = closestPlayer.position
+    local startPosition = enemyFolder:GetAttribute("Position")
+    if not startPosition then
+        warn("RangedChaseHandler: No position attribute for entity", entityId)
+        return
+    end
+    
+    local targetPosition = bestTarget.position
     
     -- Calculate direction to target
     local direction = (targetPosition - startPosition).Unit
@@ -171,13 +149,15 @@ function RangedChaseHandler._fireProjectile(entityId, closestPlayer, config)
     local connection
     connection = projectile.Touched:Connect(function(hit)
         if hit.Parent and hit.Parent:FindFirstChild("Humanoid") then
-            -- Hit a player
-            local player = Players:GetPlayerFromCharacter(hit.Parent)
-            if player then
-                -- Apply damage
-                local humanoid = hit.Parent.Humanoid
-                humanoid:TakeDamage(config.PROJECTILE_DAMAGE)
-                print("💥 Ranged projectile hit", player.Name, "for", config.PROJECTILE_DAMAGE, "damage")
+            -- Hit a target (player or NPC)
+            local humanoid = hit.Parent.Humanoid
+            if humanoid and humanoid.Health > 0 then
+                -- Apply damage using DamageSystem for consistency
+                local DamageSystem = require(script.Parent.Parent.Systems.DamageSystem)
+                DamageSystem:ApplyDamage(humanoid, config.PROJECTILE_DAMAGE, nil, "EnemyRangedAttack")
+                
+                local targetName = hit.Parent.Name
+                print("💥 Ranged projectile hit", targetName, "for", config.PROJECTILE_DAMAGE, "damage")
             end
         end
         
@@ -189,7 +169,8 @@ function RangedChaseHandler._fireProjectile(entityId, closestPlayer, config)
     -- Clean up projectile after lifetime
     Debris:AddItem(projectile, config.PROJECTILE_LIFETIME)
     
-    print("🎯 Ranged enemy", entityId, "fired projectile toward", closestPlayer.player.Name)
+    local targetName = bestTarget.target.Name
+    print("🎯 Ranged enemy", entityId, "fired projectile toward", targetName)
 end
 
 return RangedChaseHandler 

@@ -14,11 +14,10 @@ local player = Players.LocalPlayer
 
 -- Track revive prompts
 local revivePrompts = {} -- [ragdollCharacter] = prompt
-local hasRevivePlushEquipped = false
 
 -- Configuration
-local PROMPT_DISTANCE = 8 -- Distance to show revive prompt
-local PROMPT_HOLD_DURATION = 0 -- No hold required for revive
+local PROMPT_DISTANCE = 8 -- Distance to show revive prompt (changed from 5 to 8)
+local PROMPT_HOLD_DURATION = 8 -- 8 second hold required for revive (changed from 0 to 8)
 
 function RevivePromptSystem:Initialize()
     print("Initializing RevivePromptSystem...")
@@ -33,109 +32,86 @@ function RevivePromptSystem:Initialize()
             self:HandleReviveResponse(success, message)
         end)
         
-        -- Monitor for revive plush equipment changes
-        self:SetupEquipmentMonitoring()
-        
         print("RevivePromptSystem initialized successfully")
     end)
     
     if not success then
         warn("RevivePromptSystem initialization failed:", errorMessage)
     end
+    
+    -- Create prompts for any existing dead players
+    self:CreatePromptsForDeadEntities()
+    
+    -- Monitor for new dead players
+    self:SetupDeadEntityMonitoring()
 end
 
--- Set up monitoring for revive plush equipment
-function RevivePromptSystem:SetupEquipmentMonitoring()
-    -- Monitor for inventory updates with error handling
-    local success, errorMessage = pcall(function()
-        RemoteEvents.UpdateInventory.OnClientEvent:Connect(function()
-            self:CheckRevivePlushEquipment()
-        end)
-    end)
-    
-    if not success then
-        warn("Failed to connect to UpdateInventory RemoteEvent:", errorMessage)
-    end
-    
-    -- Also monitor for slot selection changes (when player equips/unequips items)
-    local SystemManager = require(ReplicatedStorage.Shared.SystemManager)
-    local InventorySystem = SystemManager.GetSystem("InventorySystem")
-    if InventorySystem then
-        -- We'll check equipment status periodically since there's no direct event
-        -- This is a simple solution - in a more robust system, we'd add events to InventorySystem
-        task.spawn(function()
-            while true do
-                task.wait(0.5) -- Check every 0.5 seconds
-                self:CheckRevivePlushEquipment()
+-- Set up monitoring for new dead entities (players and NPCs)
+function RevivePromptSystem:SetupDeadEntityMonitoring()
+    -- Monitor workspace for new ragdoll characters and dead NPCs
+    local function checkForNewDeadEntities()
+        for _, descendant in pairs(workspace:GetDescendants()) do
+            if descendant:IsA("Model") then
+                local playerFromCharacter = Players:GetPlayerFromCharacter(descendant)
+                
+                -- Check for dead players
+                if playerFromCharacter and CollectionService:HasTag(playerFromCharacter, "Dead") and CollectionService:HasTag(descendant, "Draggable") then
+                    -- Check if we already have a prompt for this ragdoll
+                    if not revivePrompts[descendant] then
+                        print("RevivePromptSystem: Found new dead player:", playerFromCharacter.Name)
+                        self:CreateRevivePrompt(playerFromCharacter, descendant)
+                    end
+                end
+                
+                -- Check for dead NPCs
+                if not playerFromCharacter and CollectionService:HasTag(descendant, "Dead") and CollectionService:HasTag(descendant, "NPC") then
+                    -- Check if we already have a prompt for this NPC
+                    if not revivePrompts[descendant] then
+                        print("RevivePromptSystem: Found new dead NPC:", descendant.Name)
+                        self:CreateRevivePrompt(descendant, descendant)
+                    end
+                end
             end
-        end)
-    end
-    
-    -- Initial check
-    self:CheckRevivePlushEquipment()
-end
-
--- Check if player has revive plush equipped
-function RevivePromptSystem:CheckRevivePlushEquipment()
-    local hadRevivePlush = hasRevivePlushEquipped
-    
-    -- Get the inventory system to check for revive plush
-    local SystemManager = require(ReplicatedStorage.Shared.SystemManager)
-    local InventorySystem = SystemManager.GetSystem("InventorySystem")
-    
-    if InventorySystem then
-        -- Check if player has revive plush equipped
-        local equippedItem = InventorySystem:GetEquippedItem()
-        if equippedItem then
-            -- Check if the equipped item is a revive plush
-            local itemId = equippedItem.itemId or InventorySystem:GetItemIdFromObject(equippedItem.object)
-            hasRevivePlushEquipped = (itemId == "revive_plush")
-            
-            print("RevivePromptSystem: Checking equipped item:", equippedItem.itemName, "itemId:", itemId, "isRevivePlush:", hasRevivePlushEquipped)
-        else
-            hasRevivePlushEquipped = false
-            print("RevivePromptSystem: No item equipped")
         end
-    else
-        warn("RevivePromptSystem: Could not find InventorySystem")
-        hasRevivePlushEquipped = false
     end
     
-    -- Update prompts if equipment status changed
-    if hadRevivePlush ~= hasRevivePlushEquipped then
-        print("RevivePromptSystem: Equipment status changed to:", hasRevivePlushEquipped)
-        self:UpdateAllPrompts()
-    end
+    -- Check periodically for new dead entities
+    task.spawn(function()
+        while true do
+            task.wait(1) -- Check every second
+            checkForNewDeadEntities()
+        end
+    end)
 end
 
--- Update all revive prompts based on equipment status
-function RevivePromptSystem:UpdateAllPrompts()
-    if hasRevivePlushEquipped then
-        -- Create prompts for all dead players
-        self:CreatePromptsForDeadPlayers()
-    else
-        -- Remove all prompts
-        self:RemoveAllPrompts()
-    end
-end
-
--- Create prompts for all dead players in workspace
-function RevivePromptSystem:CreatePromptsForDeadPlayers()
-    print("RevivePromptSystem: Creating prompts for dead players...")
+-- Create prompts for all dead entities (players and NPCs) in workspace
+function RevivePromptSystem:CreatePromptsForDeadEntities()
+    print("RevivePromptSystem: Creating prompts for dead entities...")
     
     local foundDeadPlayers = 0
-    -- Find all dead players in workspace
+    local foundDeadNPCs = 0
+    
+    -- Find all dead entities in workspace
     for _, descendant in pairs(workspace:GetDescendants()) do
-        if descendant:IsA("Model") and CollectionService:HasTag(descendant, "Draggable") then
+        if descendant:IsA("Model") then
             local playerFromCharacter = Players:GetPlayerFromCharacter(descendant)
-            if playerFromCharacter and CollectionService:HasTag(playerFromCharacter, "Dead") then
+            
+            -- Check for dead players
+            if playerFromCharacter and CollectionService:HasTag(playerFromCharacter, "Dead") and CollectionService:HasTag(descendant, "Draggable") then
                 foundDeadPlayers = foundDeadPlayers + 1
                 print("RevivePromptSystem: Creating prompt for dead player:", playerFromCharacter.Name)
                 self:CreateRevivePrompt(playerFromCharacter, descendant)
             end
+            
+            -- Check for dead NPCs
+            if not playerFromCharacter and CollectionService:HasTag(descendant, "Dead") and CollectionService:HasTag(descendant, "NPC") then
+                foundDeadNPCs = foundDeadNPCs + 1
+                print("RevivePromptSystem: Creating prompt for dead NPC:", descendant.Name)
+                self:CreateRevivePrompt(descendant, descendant)
+            end
         end
     end
-    print("RevivePromptSystem: Found", foundDeadPlayers, "dead players in workspace")
+    print("RevivePromptSystem: Found", foundDeadPlayers, "dead players and", foundDeadNPCs, "dead NPCs in workspace")
 end
 
 -- Remove all revive prompts
@@ -149,8 +125,8 @@ function RevivePromptSystem:RemoveAllPrompts()
     revivePrompts = {}
 end
 
--- Create a revive prompt for a dead player
-function RevivePromptSystem:CreateRevivePrompt(deadPlayer, ragdollCharacter)
+-- Create a revive prompt for a dead entity (player or NPC)
+function RevivePromptSystem:CreateRevivePrompt(deadEntity, ragdollCharacter)
     -- Don't create duplicate prompts
     if revivePrompts[ragdollCharacter] then
         return
@@ -159,13 +135,18 @@ function RevivePromptSystem:CreateRevivePrompt(deadPlayer, ragdollCharacter)
     -- Find the primary part of the ragdoll
     local primaryPart = ragdollCharacter.PrimaryPart
     if not primaryPart then
-        warn("RevivePromptSystem: No primary part found for ragdoll:", deadPlayer.Name)
+        warn("RevivePromptSystem: No primary part found for ragdoll:", deadEntity.Name)
         return
     end
     
+    -- Determine if this is a player or NPC
+    local Players = game:GetService("Players")
+    local isPlayer = Players:GetPlayerFromCharacter(deadEntity)
+    local objectText = isPlayer and "Dead Player" or "Dead NPC"
+    
     -- Create the proximity prompt
     local prompt = Instance.new("ProximityPrompt")
-    prompt.ObjectText = "Dead Player"
+    prompt.ObjectText = objectText
     prompt.ActionText = "Revive"
     prompt.HoldDuration = PROMPT_HOLD_DURATION
     prompt.MaxActivationDistance = PROMPT_DISTANCE
@@ -173,7 +154,7 @@ function RevivePromptSystem:CreateRevivePrompt(deadPlayer, ragdollCharacter)
     
     -- Connect the triggered event
     prompt.Triggered:Connect(function()
-        self:HandleReviveTriggered(deadPlayer, ragdollCharacter)
+        self:HandleReviveTriggered(deadEntity, ragdollCharacter)
     end)
     
     -- Parent the prompt to the ragdoll's primary part
@@ -182,7 +163,7 @@ function RevivePromptSystem:CreateRevivePrompt(deadPlayer, ragdollCharacter)
     -- Store the prompt
     revivePrompts[ragdollCharacter] = prompt
     
-    print("RevivePromptSystem: Created revive prompt for:", deadPlayer.Name)
+    print("RevivePromptSystem: Created revive prompt for:", deadEntity.Name)
 end
 
 -- Remove a revive prompt
@@ -195,17 +176,45 @@ function RevivePromptSystem:RemoveRevivePrompt(ragdollCharacter)
 end
 
 -- Handle when a revive prompt is triggered
-function RevivePromptSystem:HandleReviveTriggered(deadPlayer, ragdollCharacter)
-    print("RevivePromptSystem: Revive triggered for:", deadPlayer.Name)
+function RevivePromptSystem:HandleReviveTriggered(deadEntity, ragdollCharacter)
+    print("RevivePromptSystem: Revive triggered for:", deadEntity.Name)
     
-    -- Double-check that we have the revive plush equipped
+    -- Check if player has revive plush equipped at the time of trigger
+    local hasRevivePlushEquipped = self:CheckRevivePlushEquipment()
+    
     if not hasRevivePlushEquipped then
         print("RevivePromptSystem: Revive plush not equipped, ignoring trigger")
         return
     end
     
     -- Send revive request to server
-    RemoteEvents.ReviveRequest:FireServer(deadPlayer)
+    RemoteEvents.ReviveRequest:FireServer(deadEntity)
+end
+
+-- Check if player has revive plush equipped (only when needed)
+function RevivePromptSystem:CheckRevivePlushEquipment()
+    -- Get the inventory system to check for revive plush
+    local SystemManager = require(ReplicatedStorage.Shared.SystemManager)
+    local InventorySystem = SystemManager.GetSystem("InventorySystem")
+    
+    if InventorySystem then
+        -- Check if player has revive plush equipped
+        local equippedItem = InventorySystem:GetEquippedItem()
+        if equippedItem then
+            -- Check if the equipped item is a revive plush
+            local itemId = equippedItem.itemId or InventorySystem:GetItemIdFromObject(equippedItem.object)
+            local isRevivePlush = (itemId == "revive_plush")
+            
+            print("RevivePromptSystem: Checking equipped item:", equippedItem.itemName, "itemId:", itemId, "isRevivePlush:", isRevivePlush)
+            return isRevivePlush
+        else
+            print("RevivePromptSystem: No item equipped")
+            return false
+        end
+    else
+        warn("RevivePromptSystem: Could not find InventorySystem")
+        return false
+    end
 end
 
 -- Handle revive response from server
@@ -222,7 +231,6 @@ end
 -- Manual test function (for debugging)
 function RevivePromptSystem:TestRevivePlushDetection()
     print("=== RevivePromptSystem Test ===")
-    print("Current hasRevivePlushEquipped:", hasRevivePlushEquipped)
     
     local SystemManager = require(ReplicatedStorage.Shared.SystemManager)
     local InventorySystem = SystemManager.GetSystem("InventorySystem")

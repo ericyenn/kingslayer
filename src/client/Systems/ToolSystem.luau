@@ -7,10 +7,54 @@ local ActionConstants = require(ReplicatedStorage.Shared.ActionConstants)
 local SystemManager = require(ReplicatedStorage.Shared.SystemManager)
 local RemoteEvents = require(ReplicatedStorage.Shared.RemoteEvents)
 
-
+-- Import EnemyManager to get entity ID from enemy models
+local EnemyManager = require(script.Parent.Parent.EnemyManager)
 
 -- Create tool-specific action registry
 local toolRegistry = ActionRegistry.new("ToolSystem")
+
+-- Helper function to get enemy entity ID from hit part
+local function getEnemyEntityIdFromHitPart(hitPart)
+    if not hitPart then return nil end
+    
+    -- Look for enemy model in the hierarchy
+    local model = hitPart.Parent
+    while model and model ~= workspace do
+        -- Check if this is an enemy model
+        local CollectionService = game:GetService("CollectionService")
+        if CollectionService:HasTag(model, "Enemies") then
+            -- This is an enemy model, find its entity ID
+            local allLocalEnemies = EnemyManager.getAllLocalEnemies()
+            for entityId, enemyData in pairs(allLocalEnemies) do
+                if enemyData.model == model then
+                    return entityId
+                end
+            end
+        end
+        model = model.Parent
+    end
+    
+    return nil
+end
+
+-- Helper function to highlight enemy red
+local function highlightEnemyRed(enemyModel)
+    if not enemyModel then return end
+    
+    -- Create a red highlight effect
+    local highlight = Instance.new("Highlight")
+    highlight.FillColor = Color3.fromRGB(255, 0, 0) -- Red
+    highlight.OutlineTransparency = 1 -- Make outline invisible
+    highlight.FillTransparency = 0.3
+    highlight.Parent = enemyModel
+    
+    -- Remove highlight after 0.2 seconds
+    task.delay(0.2, function()
+        if highlight and highlight.Parent then
+            highlight:Destroy()
+        end
+    end)
+end
 
 -- Register generic tool attack action (all tools use this)
 toolRegistry:RegisterAction(ActionConstants.Tool.ATTACK, function(player, itemDef, target, actionData, attackType)
@@ -127,20 +171,51 @@ toolRegistry:RegisterAction(ActionConstants.Tool.ATTACK, function(player, itemDe
                            (target.Parent and CollectionService:HasTag(target.Parent, "Enemies"))
             
             if isEnemy then
-                -- Play hit sound for enemies
-                if _G.AudioSystem then
-                    if isCritical then
-                        -- Delay critical hit sound by 0.1 seconds after timing success
-                        task.wait(0.1)
-                        _G.AudioSystem:PlayCriticalHitSound()
-                    else
-                        _G.AudioSystem:PlayHitSuccessSound()
+                -- Get enemy entity ID from hit part
+                local enemyEntityId = getEnemyEntityIdFromHitPart(target)
+                
+                if enemyEntityId then
+                    -- Check if enemy is dead
+                    local enemyFolder = workspace:FindFirstChild("Enemies"):FindFirstChild(tostring(enemyEntityId))
+                    if enemyFolder and enemyFolder:GetAttribute("Dead") == true then
+                        print("  - Enemy is dead, cannot attack")
+                        if _G.AudioSystem then
+                            _G.AudioSystem:PlaySwingMissSound()
+                        end
+                        return
+                    end
+                    
+                    -- Find the enemy model for highlighting
+                    local allLocalEnemies = EnemyManager.getAllLocalEnemies()
+                    local enemyData = allLocalEnemies[enemyEntityId]
+                    local enemyModel = enemyData and enemyData.model
+                    
+                    -- Immediately highlight enemy red
+                    if enemyModel then
+                        highlightEnemyRed(enemyModel)
+                        print("  - Highlighted enemy red for immediate feedback")
+                    end
+                    
+                    -- Play hit sound for enemies
+                    if _G.AudioSystem then
+                        if isCritical then
+                            -- Delay critical hit sound by 0.1 seconds after timing success
+                            task.wait(0.1)
+                            _G.AudioSystem:PlayCriticalHitSound()
+                        else
+                            _G.AudioSystem:PlayHitSuccessSound()
+                        end
+                    end
+                    
+                    -- Send damage request to server with entity ID
+                    RemoteEvents.ApplyDamage:FireServer(enemyEntityId, weaponName, finalDamage)
+                    print("  - Sent enemy damage request to server with entity ID:", enemyEntityId)
+                else
+                    print("  - Could not find enemy entity ID for hit target")
+                    if _G.AudioSystem then
+                        _G.AudioSystem:PlaySwingMissSound()
                     end
                 end
-                
-                -- Send regular damage request to server for enemies
-                RemoteEvents.ApplyDamage:FireServer(target, weaponName, finalDamage)
-                print("  - Sent enemy damage request to server")
             else
                 -- No valid target found - play miss sound
                 print("  - No valid target found (not breakable or enemy)")

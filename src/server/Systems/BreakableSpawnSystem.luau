@@ -188,10 +188,7 @@ function BreakableSpawnSystem:GenerateSpawnPosition()
     return position
 end
 
-function BreakableSpawnSystem:RespawnBrokenObjects()
-    -- This function is no longer needed since objects are destroyed when broken
-    -- and new ones will be spawned when needed
-end
+-- Removed respawn functionality - objects are destroyed when broken
 
 function BreakableSpawnSystem:RemoveBreakable(breakableObject)
     for i, spawnData in ipairs(spawnedBreakables) do

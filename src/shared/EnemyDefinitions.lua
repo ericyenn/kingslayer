@@ -49,10 +49,11 @@ EnemyDefinitions.enemies = {
         
         -- Custom configuration overrides
         customConfig = {
-            moveSpeed = 18, -- Faster than default melee
-            damage = 1,    -- Higher damage
-            attackSpeed = 2.2,
+            moveSpeed = 16, -- Faster than default melee
+            damage = 5,    -- Higher damage
+            attackCooldown = 0.45, -- Time between attacks (1/2.2 = 0.45 seconds)
             detectionRange = 15,
+            raycastDistance = 3.5, -- Longer raycast range for berserker
             -- Idle movement settings
             idleMovementEnabled = true,
             idleMovementRadius = 20,
@@ -85,8 +86,9 @@ EnemyDefinitions.enemies = {
         customConfig = {
             moveSpeed = 14, -- Slower but tankier
             damage = 40,
-            attackSpeed = 1.8,
+            attackCooldown = 0.56, -- Time between attacks (1/1.8 = 0.56 seconds)
             detectionRange = 40,
+            raycastDistance = 2.5, -- Shorter raycast range for tankier enemy
             chaseDistance = 60 -- Persistent chaser
         },
         
@@ -115,8 +117,9 @@ EnemyDefinitions.enemies = {
         customConfig = {
             moveSpeed = 16, -- Standard melee speed
             damage = 25,    -- Moderate damage
-            attackSpeed = 2.0,
+            attackCooldown = 0.5, -- Time between attacks (1/2.0 = 0.5 seconds)
             detectionRange = 60, -- Very long detection range as requested
+            raycastDistance = 5.0, -- Very long raycast range for night dweller
             -- Idle movement settings
             idleMovementEnabled = true,
             idleMovementRadius = 25,
@@ -137,10 +140,10 @@ EnemyDefinitions.enemies = {
     },
     
     -- RANGED ENEMIES
-    desert_archer = {
-        name = "Desert Archer",
-        description = "Desert dude archer that keeps its distance and shoots arrows.",
-        model = "DesertArcherModel",
+    forest_archer = {
+        name = "Forest Archer",
+        description = "Forest dude archer that keeps its distance and shoots arrows.",
+        model = "ForestArcherModel",
         enemyType = "ranged",
         
         color = Color3.fromRGB(200, 200, 180), -- Bone white

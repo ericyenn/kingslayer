@@ -7,6 +7,9 @@ local RunService = game:GetService("RunService")
 
 local RemoteEvents = require(ReplicatedStorage.Shared.RemoteEvents)
 
+-- Import NPCRagdollSystem
+local NPCRagdollSystem = require(script.Parent.Systems.NPCRagdollSystem)
+
 local NPCManager = {}
 
 -- Server-wide quest state
@@ -20,11 +23,31 @@ NPCManager.followConnections = {} -- {[npcId] = connection}
 
 -- NPC spawn positions (you can adjust these coordinates)
 local spawnPositions = {
-	wise_man = Vector3.new(0, 5, 0),
-	trader = Vector3.new(20, 5, 0),
-	regular_npc = Vector3.new(-20, 5, 0),
-	princess = Vector3.new(0, 5, 30) -- Tower location
+	wise_man = Vector3.new(0, 0, 0),
+	trader = Vector3.new(20, 0, 0),
+	regular_npc = Vector3.new(-20, 0, 0),
+	princess = Vector3.new(0, 0, 30) -- Tower location
 }
+
+-- Find proper ground position using raycast
+local function findGroundPosition(spawnPosition)
+	local rayOrigin = spawnPosition + Vector3.new(0, 50, 0) -- Start 50 studs above
+	local rayDirection = Vector3.new(0, -100, 0) -- Cast 100 studs down
+	
+	local raycastParams = RaycastParams.new()
+	raycastParams.FilterType = Enum.RaycastFilterType.Exclude
+	raycastParams.FilterDescendantsInstances = {} -- Don't filter anything for now
+	
+	local result = workspace:Raycast(rayOrigin, rayDirection, raycastParams)
+	
+	if result then
+		-- Position above the ground (4 studs for humanoid height to prevent ground clipping)
+		return result.Position + Vector3.new(0, 4, 0)
+	else
+		-- Fallback: use original position with height offset
+		return spawnPosition + Vector3.new(0, 4, 0)
+	end
+end
 
 -- Create a simple NPC model
 function NPCManager:CreateNPCModel(npcId)
@@ -46,7 +69,9 @@ function NPCManager:CreateNPCModel(npcId)
 			local part = Instance.new("Part")
 			part.Name = "HumanoidRootPart"
 			part.Size = Vector3.new(2, 5, 1)
-			part.Position = spawnPositions[npcId]
+			local groundPosition = findGroundPosition(spawnPositions[npcId])
+			part.Position = groundPosition
+			-- NPCs should be anchored when alive
 			part.Anchored = true
 			part.CanCollide = false
 			part.Parent = model
@@ -64,10 +89,13 @@ function NPCManager:CreateNPCModel(npcId)
 	local model = template:Clone()
 	model.Name = npcId
 	
-	-- Position the model
+	-- Position the model on the ground
 	if model:FindFirstChild("HumanoidRootPart") then
-		model.HumanoidRootPart.Position = spawnPositions[npcId]
+		local groundPosition = findGroundPosition(spawnPositions[npcId])
+		model.HumanoidRootPart.Position = groundPosition
+		-- NPCs should be anchored when alive
 		model.HumanoidRootPart.Anchored = true
+		print("NPCManager: Positioned", npcId, "at ground level:", groundPosition)
 	end
 	
 	-- Ensure all NPCs have proper Humanoid setup
@@ -81,25 +109,25 @@ function NPCManager:CreateNPCModel(npcId)
 		warn(npcId .. " model doesn't have a Humanoid! Make sure you're using an R15/R6 dummy as PlayerModel template.")
 	end
 	
-	-- Special handling for Princess - configure existing Humanoid for mob behavior
-	if npcId == "princess" then
-		local humanoid = model:FindFirstChild("Humanoid")
-		if humanoid then
-			-- Configure the existing Humanoid
-			humanoid.MaxHealth = 100
-			humanoid.Health = 100
-			
-			-- Handle death
-			humanoid.Died:Connect(function()
-				wait(2) -- Small delay before removal
-				self:RemoveNPC("princess")
-				print("Princess has been defeated!")
-			end)
-		else
-			warn("Princess model doesn't have a Humanoid! Make sure you're using an R15/R6 dummy as PlayerModel template.")
-		end
+	-- Add NPC tag for AI detection
+	local CollectionService = game:GetService("CollectionService")
+	CollectionService:AddTag(model, "NPC")
+	
+	-- Configure Humanoid for all NPCs (including princess)
+	local humanoid = model:FindFirstChild("Humanoid")
+	if humanoid then
+		-- Set health for all NPCs
+		humanoid.MaxHealth = 100
+		humanoid.Health = 100
 		
-		-- Keep anchored initially so she doesn't fall before following
+		-- Register with NPCRagdollSystem for death handling
+		NPCRagdollSystem:RegisterNPC(model, npcId)
+	else
+		warn(npcId .. " model doesn't have a Humanoid! Make sure you're using an R15/R6 dummy as PlayerModel template.")
+	end
+	
+	-- Anchor all NPCs initially (they should be anchored when alive)
+	if model:FindFirstChild("HumanoidRootPart") then
 		model.HumanoidRootPart.Anchored = true
 	end
 	
@@ -160,6 +188,10 @@ function NPCManager:SpawnNPC(npcId)
 	npcModel.Parent = workspace
 	self.spawnedNPCs[npcId] = npcModel
 	
+	-- Add NPC tag for AI detection
+	local CollectionService = game:GetService("CollectionService")
+	CollectionService:AddTag(npcModel, "NPC")
+	
 	print("Spawned NPC:", npcId)
 	return npcModel
 end
@@ -167,6 +199,11 @@ end
 -- Remove an NPC
 function NPCManager:RemoveNPC(npcId)
 	if self.spawnedNPCs[npcId] then
+		local npcModel = self.spawnedNPCs[npcId]
+		
+		-- Clean up NPCRagdollSystem
+		NPCRagdollSystem:CleanupNPC(npcModel)
+		
 		-- Clean up RunService connections before destroying
 		if self.followConnections[npcId] then
 			self.followConnections[npcId]:Disconnect()
@@ -298,32 +335,7 @@ function NPCManager:MakePrincessFollow(player)
 	print("Princess is now following", player.Name)
 end
 
--- Enable Princess combat mode
-function NPCManager:EnablePrincessCombat()
-	local princess = self.spawnedNPCs["princess"]
-	if not princess then return end
-	
-	-- DISABLE the ProximityPrompt so she can't be talked to in combat
-	local prompt = princess.HumanoidRootPart:FindFirstChild("ProximityPrompt")
-	if prompt then
-		prompt.Enabled = false
-	end
-	
-	-- Enable physics for combat (unanchor if not already)
-	if princess.HumanoidRootPart then
-		princess.HumanoidRootPart.Anchored = false
-	end
-	
-	-- Humanoid already exists from spawn, just verify it's there
-	local humanoid = princess:FindFirstChild("Humanoid")
-	if not humanoid then
-		warn("Princess doesn't have a Humanoid - combat mode may not work properly!")
-		warn("Make sure you're using an R15/R6 dummy as PlayerModel template in ServerStorage!")
-		return
-	end
-	
-	print("Princess is now in combat mode!")
-end
+
 
 -- Initialize the system
 function NPCManager:Initialize()

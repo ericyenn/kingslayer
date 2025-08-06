@@ -129,6 +129,8 @@ function BreakableDamageSystem:ProcessBreakableDamageRequest(player, targetPart,
     
     -- Handle breaking
     if result == "broken" then
+        print("BreakableDamageSystem: Object is broken, handling destruction")
+        
         -- Trigger break particles before destroying the object
         if visualComponent then
             print("BreakableDamageSystem: Triggering break particles for", targetPart.Name)
@@ -221,17 +223,9 @@ function BreakableDamageSystem:GetToolType(equippedTool)
 end
 
 function BreakableDamageSystem:HandleBreakableBroken(breakableObject, breakableComponent)
-    -- Store position for respawning
-    local originalPosition = breakableObject.Position
-    local originalSize = breakableObject.Size
-    local originalCFrame = breakableObject.CFrame
-    
     -- Remove Breakable tag while broken
     local CollectionService = game:GetService("CollectionService")
     CollectionService:RemoveTag(breakableObject, "Breakable")
-    
-    -- Start respawn timer
-    breakableComponent:StartRespawn()
     
     -- Drop items
     self:DropBreakableItems(breakableObject, breakableComponent)
@@ -249,20 +243,31 @@ function BreakableDamageSystem:DropBreakableItems(breakableObject, breakableComp
     local dropItems = breakableComponent:GetDropItems()
     local dropPosition = breakableObject.Position + Vector3.new(0, 2, 0)
     
+    print("BreakableDamageSystem: Dropping items for", breakableObject.Name)
+    print("  - Drop position:", dropPosition)
+    print("  - Number of drop configs:", #dropItems)
+    
     for _, dropConfig in ipairs(dropItems) do
+        print("  - Checking drop config:", dropConfig.item, "chance:", dropConfig.chance)
+        
         if math.random() <= dropConfig.chance then
             local quantity = math.random(dropConfig.quantity.min, dropConfig.quantity.max)
+            print("  - Spawning", quantity, "of", dropConfig.item)
             
-            -- Spawn the item using existing ItemSpawnSystem
-            local itemSpawnSystem = SystemManager.GetSystem("ItemSpawnSystem")
-            if itemSpawnSystem then
+            -- Spawn the item using ItemPoolSpawnSystem
+            local ItemPoolSpawnSystem = require(script.Parent.ItemSpawnSystem)
+            if ItemPoolSpawnSystem then
                 for i = 1, quantity do
                     local offset = Vector3.new(math.random(-2, 2), 0, math.random(-2, 2))
-                    itemSpawnSystem:SpawnItem(dropConfig.item, dropPosition + offset)
+                    local spawnPos = dropPosition + offset
+                    print("  - Spawning item at position:", spawnPos)
+                    ItemPoolSpawnSystem.SpawnItem(dropConfig.item, spawnPos)
                 end
             else
-                warn("BreakableDamageSystem: ItemSpawnSystem not found")
+                warn("BreakableDamageSystem: ItemPoolSpawnSystem not found")
             end
+        else
+            print("  - Failed chance roll for", dropConfig.item)
         end
     end
 end

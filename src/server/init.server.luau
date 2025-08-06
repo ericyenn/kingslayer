@@ -21,6 +21,7 @@ local SanitySystem = require(ServerSystems.SanitySystem)
 local PlayerRagdollSystem = require(ServerSystems.PlayerRagdollSystem)
 local PlayerEffectsSystem = require(ServerSystems.PlayerEffectsSystem)
 local ReviveSystem = require(ServerSystems.ReviveSystem)
+local NPCRagdollSystem = require(ServerSystems.NPCRagdollSystem)
 
 -- Import altar systems
 local AltarSystem = require(ServerSystems.AltarSystem)
@@ -147,6 +148,8 @@ end)
 
 
 
+
+
 -- Initialize dialogue systems
 NPCManager:Initialize()
 DialogueHandler:SetNPCManager(NPCManager)
@@ -171,5 +174,18 @@ ItemPoolSpawnSystem.spawnAllItems()
 _G.EnemySystemInitializer = EnemySystemInitializer
 _G.SpawnerSetup = SpawnerSetup
 print("Enemy systems integrated:", EnemySystemInitializer.initialized)
+
+-- Set up enemy attack request handler
+RemoteEvents.EnemyAttackRequest.OnServerEvent:Connect(function(player, entityId, targetPlayer, raycastDistance, timestamp)
+    -- Validate the request
+    local MeleeChaseHandler = require(script.EnemySystems.MeleeChaseHandler)
+    local success, message = MeleeChaseHandler.validateAttackRequest(entityId, targetPlayer, raycastDistance, timestamp)
+    
+    if success then
+        print("✅ Attack validated for enemy", entityId, "attacking", targetPlayer.Name)
+    else
+        print("❌ Attack rejected for enemy", entityId, ":", message)
+    end
+end)
 
 print("Server systems initialized!")

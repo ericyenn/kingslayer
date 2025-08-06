@@ -277,8 +277,12 @@ function HitboxSystem.getItemSettings(itemName)
     return settings
 end
 
--- Get enemy-specific hitbox settings
+-- Get enemy-specific hitbox settings (melee enemies now use raycasts)
 function HitboxSystem.getEnemySettings(enemyType)
+    if enemyType == "melee" then
+        warn("HitboxSystem: Melee enemies now use raycasts instead of hitboxes")
+        return nil
+    end
     return HitboxConfig.enemySettings[enemyType] or HitboxConfig.default
 end
 

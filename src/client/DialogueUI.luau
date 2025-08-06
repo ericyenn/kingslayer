@@ -6,6 +6,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local UserInputService = game:GetService("UserInputService")
 local TweenService = game:GetService("TweenService")
 local RunService = game:GetService("RunService")
+local CollectionService = game:GetService("CollectionService")
 
 local player = Players.LocalPlayer
 local RemoteEvents = require(ReplicatedStorage.Shared.RemoteEvents)
@@ -58,10 +59,7 @@ function DialogueUI:CreateDialogueSystem()
 	dialogueBox.BorderSizePixel = 0
 	dialogueBox.Parent = screenGui
 	
-	-- Main dialogue box corner rounding
-	local dialogueCorner = Instance.new("UICorner")
-	dialogueCorner.CornerRadius = UDim.new(0, 12) -- Gently rounded corners
-	dialogueCorner.Parent = dialogueBox
+	-- No rounded corners for main dialogue box
 	
 	-- Dialogue text area
 	local textArea = Instance.new("TextLabel")
@@ -124,10 +122,7 @@ function DialogueUI:CreateChoiceBox(choiceText, choiceIndex, container, npcId)
 	button.AutoButtonColor = false
 	button.Parent = container
 	
-	-- Corner rounding for choice box
-	local corner = Instance.new("UICorner")
-	corner.CornerRadius = UDim.new(0, 8) -- Gentle rounding
-	corner.Parent = button
+	-- No rounded corners for choice box
 	
 	-- Padding for text
 	local padding = Instance.new("UIPadding")
@@ -378,15 +373,17 @@ function DialogueUI:OnProximityPromptTriggered(promptObject)
 	print("NPC Model Name:", npcModel and npcModel.Name or "nil")
 	print("NPC Model Parent:", npcModel and npcModel.Parent or "nil")
 	
-	if npcModel and npcModel.Parent == workspace then
+	-- Check if this is actually an NPC (has NPC tag) and not a dead player
+	if npcModel and npcModel.Parent == workspace and CollectionService:HasTag(npcModel, "NPC") then
 		local npcId = npcModel.Name
 		print("Proximity prompt triggered for NPC:", npcId)
 		print("Firing StartDialogue to server for:", npcId)
 		RemoteEvents.StartDialogue:FireServer(npcId)
 	else
-		print("NPC model not found or not in workspace")
+		print("Not an NPC or not in workspace - ignoring prompt")
 		print("npcModel:", npcModel)
 		print("npcModel.Parent:", npcModel and npcModel.Parent or "nil")
+		print("Has NPC tag:", npcModel and CollectionService:HasTag(npcModel, "NPC") or "nil")
 	end
 end
 

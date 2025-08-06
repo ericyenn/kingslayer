@@ -176,6 +176,20 @@ local systemInitializationOrder = {
         maxRetries = 2
     },
     
+    -- Enemy management system (new)
+    {
+        name = "EnemyManager",
+        module = require(script.EnemyManager),
+        maxRetries = 2
+    },
+    
+    -- Enemy chat handler (new)
+    {
+        name = "EnemyChatHandler",
+        module = require(script.Systems.EnemyChatHandler),
+        maxRetries = 2
+    },
+    
 
     
     -- UI components
