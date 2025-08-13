@@ -3,9 +3,9 @@
 
 local ItemLootPools = {
     ForestLootPool = {
-        items = { "cane", "cutlass", "chestplate", "summoner", "axe", "pickaxe" },
+        items = { "cane", "compass", "chestplate", "summoner", "axe", "pickaxe", "clock" },
         rarities = { 0.25, 0.15, 0.1, 0.2, 0.15, 0.1, 0.05, 0.05 },
-        guaranteed = { "revive_plush", "axe", "cutlass" },
+        guaranteed = { "revive_plush", "axe", "compass", "clock" },
         region = "forest"
     },
     DesertLootPool = {

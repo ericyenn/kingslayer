@@ -15,6 +15,9 @@ local healthFill = nil
 local sanityFill = nil
 local healthLabel = nil
 local sanityLabel = nil
+local clockTitleLabel = nil
+local clockValueLabel = nil
+local clockTitleFrame = nil
 
 local BAR_WIDTH = 240
 local BAR_HEIGHT = 28
@@ -38,6 +41,65 @@ function Healthbar:Initialize()
     screenGui.ResetOnSpawn = false
     screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
     screenGui.Parent = playerGui
+    -- Add clock title with gradient background (similar to compass UI)
+    clockTitleFrame = Instance.new("Frame")
+    clockTitleFrame.Name = "ClockTitleBackground"
+    clockTitleFrame.Size = UDim2.new(0, BAR_WIDTH, 0, 22)
+    clockTitleFrame.Position = UDim2.new(0, BAR_MARGIN, 1, -(BAR_HEIGHT * 2 + BAR_SPACING + BAR_MARGIN + 24))
+    clockTitleFrame.BackgroundColor3 = Color3.fromRGB(10, 10, 10)
+    clockTitleFrame.BackgroundTransparency = 0
+    clockTitleFrame.BorderSizePixel = 0
+    clockTitleFrame.Parent = screenGui
+
+    do
+        local grad = Instance.new("UIGradient")
+        grad.Rotation = 0
+        grad.Color = ColorSequence.new({
+            ColorSequenceKeypoint.new(0, Color3.new(1,1,1)),
+            ColorSequenceKeypoint.new(1, Color3.new(1,1,1)),
+        })
+        grad.Transparency = NumberSequence.new({
+            NumberSequenceKeypoint.new(0.0, 1.0),
+            NumberSequenceKeypoint.new(0.15, 0.6),
+            NumberSequenceKeypoint.new(0.5, 0.2),
+            NumberSequenceKeypoint.new(0.85, 0.6),
+            NumberSequenceKeypoint.new(1.0, 1.0),
+        })
+        grad.Parent = clockTitleFrame
+    end
+
+    clockTitleLabel = Instance.new("TextLabel")
+    clockTitleLabel.Name = "ClockTitle"
+    clockTitleLabel.Size = UDim2.new(0, 80, 1, 0)
+    clockTitleLabel.Position = UDim2.new(0, 10, 0, 0)
+    clockTitleLabel.BackgroundTransparency = 1
+    clockTitleLabel.Text = "Clock:"
+    clockTitleLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+    clockTitleLabel.TextStrokeTransparency = 0.5
+    clockTitleLabel.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
+    clockTitleLabel.TextSize = 25
+    -- Use Patrick Hand font
+    clockTitleLabel.Font = Enum.Font.PatrickHand
+    clockTitleLabel.TextXAlignment = Enum.TextXAlignment.Left
+    clockTitleLabel.TextYAlignment = Enum.TextYAlignment.Center
+    clockTitleLabel.Parent = clockTitleFrame
+
+    -- Clock time value shown next to the title
+    clockValueLabel = Instance.new("TextLabel")
+    clockValueLabel.Name = "ClockValue"
+    clockValueLabel.Size = UDim2.new(1, 0, 1, 0)
+    clockValueLabel.Position = UDim2.new(0, 0, 0, 0)
+    clockValueLabel.BackgroundTransparency = 1
+    clockValueLabel.Text = "00:00"
+    clockValueLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+    clockValueLabel.TextStrokeTransparency = 0.35
+    clockValueLabel.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
+    clockValueLabel.TextSize = 25
+    -- Use Patrick Hand font
+    clockValueLabel.Font = Enum.Font.PatrickHand
+    clockValueLabel.TextXAlignment = Enum.TextXAlignment.Center
+    clockValueLabel.TextYAlignment = Enum.TextYAlignment.Center
+    clockValueLabel.Parent = clockTitleFrame
 
     -- Create health bar background
     healthBarFrame = Instance.new("Frame")
@@ -58,6 +120,18 @@ function Healthbar:Initialize()
     healthFill.BorderSizePixel = 0
     healthFill.BackgroundTransparency = 0.05
     healthFill.Parent = healthBarFrame
+    -- Subtle vertical gradient for 3D effect
+    do
+        local g = Instance.new("UIGradient")
+        g.Rotation = 90
+        g.Color = ColorSequence.new(Color3.new(1,1,1), Color3.new(1,1,1))
+        g.Transparency = NumberSequence.new({
+            NumberSequenceKeypoint.new(0.0, 0.12),
+            NumberSequenceKeypoint.new(0.5, 0.0),
+            NumberSequenceKeypoint.new(1.0, 0.18),
+        })
+        g.Parent = healthFill
+    end
 
     -- Create sanity bar background
     sanityBarFrame = Instance.new("Frame")
@@ -78,6 +152,18 @@ function Healthbar:Initialize()
     sanityFill.BorderSizePixel = 0
     sanityFill.BackgroundTransparency = 0.05
     sanityFill.Parent = sanityBarFrame
+    -- Subtle vertical gradient for 3D effect
+    do
+        local g = Instance.new("UIGradient")
+        g.Rotation = 90
+        g.Color = ColorSequence.new(Color3.new(1,1,1), Color3.new(1,1,1))
+        g.Transparency = NumberSequence.new({
+            NumberSequenceKeypoint.new(0.0, 0.12),
+            NumberSequenceKeypoint.new(0.5, 0.0),
+            NumberSequenceKeypoint.new(1.0, 0.18),
+        })
+        g.Parent = sanityFill
+    end
 
     -- Add rounded corners to all bars
     local function addCorner(parent)
@@ -100,9 +186,11 @@ function Healthbar:Initialize()
     healthLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
     healthLabel.TextStrokeTransparency = 0.5
     healthLabel.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
-    healthLabel.TextSize = 16
-    healthLabel.Font = Enum.Font.GothamBold
-    healthLabel.TextXAlignment = Enum.TextXAlignment.Center
+    healthLabel.TextSize = 23
+    healthLabel.Font = Enum.Font.PatrickHand
+    healthLabel.TextXAlignment = Enum.TextXAlignment.Left
+    healthLabel.Position = UDim2.new(0, 8, 0, 0)
+    healthLabel.Size = UDim2.new(1, -8, 1, 0)
     healthLabel.TextYAlignment = Enum.TextYAlignment.Center
     healthLabel.Parent = healthBarFrame
 
@@ -115,9 +203,11 @@ function Healthbar:Initialize()
     sanityLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
     sanityLabel.TextStrokeTransparency = 0.5
     sanityLabel.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
-    sanityLabel.TextSize = 16
-    sanityLabel.Font = Enum.Font.GothamBold
-    sanityLabel.TextXAlignment = Enum.TextXAlignment.Center
+    sanityLabel.TextSize = 23
+    sanityLabel.Font = Enum.Font.PatrickHand
+    sanityLabel.TextXAlignment = Enum.TextXAlignment.Left
+    sanityLabel.Position = UDim2.new(0, 8, 0, 0)
+    sanityLabel.Size = UDim2.new(1, -8, 1, 0)
     sanityLabel.TextYAlignment = Enum.TextYAlignment.Center
     sanityLabel.Parent = sanityBarFrame
 
@@ -135,7 +225,7 @@ function Healthbar:ConnectHealth()
         local maxHealth = math.max(1, humanoid.MaxHealth)
         local percent = health / maxHealth
         healthFill.Size = UDim2.new(percent, 0, 1, 0)
-        healthLabel.Text = string.format("Health: %d / %d", math.floor(health), math.floor(maxHealth))
+        healthLabel.Text = string.format("Health %d", math.floor(health))
     end
 
     local function onCharacterAdded(char)
@@ -156,7 +246,7 @@ function Healthbar:ConnectSanity()
     local function updateSanityDisplay()
         local percent = currentSanity / MAX_SANITY
         sanityFill.Size = UDim2.new(percent, 0, 1, 0)
-        sanityLabel.Text = string.format("Sanity: %d / %d", math.floor(currentSanity), MAX_SANITY)
+        sanityLabel.Text = string.format("Sanity %d", math.floor(currentSanity))
         
         -- Change color based on sanity level
         if currentSanity > 70 then

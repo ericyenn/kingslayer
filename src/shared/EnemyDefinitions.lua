@@ -155,6 +155,7 @@ EnemyDefinitions.enemies = {
             damage = 7,
             attackSpeed = 1.2,
             detectionRange = 45,
+            attackRange = 40, -- Attack range increased to 40 studs
             projectileSpeed = 60,
             aimAccuracy = 0.85,
             -- Ranged-specific settings
@@ -199,6 +200,7 @@ EnemyDefinitions.enemies = {
             damage = 25,
             attackSpeed = 1.5,
             detectionRange = 35,
+            attackRange = 40, -- Attack range increased to 40 studs
             -- Special abilities
             canTeleport = true,
             teleportRange = 20,

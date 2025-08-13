@@ -32,7 +32,8 @@ ItemDefinitions.items = {
         actionData = {
             damage = 5,
             chargeMultiplier = 2.0, -- Charged attack does 2x damage (10 total)
-            criticalMultiplier = 3.0 -- Critical attack does 3x damage (15 total)
+            criticalMultiplier = 3.0, -- Critical attack does 3x damage (15 total)
+            hitboxLength = 1.5 -- Short range for walking stick
         },
         components = {
             Draggable = {
@@ -61,7 +62,8 @@ ItemDefinitions.items = {
             damage = 15,
             chargeMultiplier = 2.0, -- Charged attack does 2x damage (30 total)
             criticalMultiplier = 3.0, -- Critical attack does 3x damage (45 total)
-            cooldown = 0.4 -- Attack cooldown in seconds
+            cooldown = 0.4, -- Attack cooldown in seconds
+            hitboxLength = 2.5 -- Medium range for sword
         },
         components = {
             Draggable = {
@@ -92,7 +94,8 @@ ItemDefinitions.items = {
             chargeMultiplier = 2.0,
             criticalMultiplier = 3.0,
             breakableDamage = 25, -- Special damage for breakable objects
-            cooldown = 0.8 -- Attack cooldown in seconds
+            cooldown = 0.8, -- Attack cooldown in seconds
+            hitboxLength = 10.0 -- Long range for axe
         },
         components = {
             Draggable = {
@@ -289,6 +292,54 @@ ItemDefinitions.items = {
                 stackable = false,
                 maxStack = 1,
                 inventoryIcon = "💎",
+                canPickup = true
+            }
+        }
+    },
+
+    -- COMPASS (consumable unlock)
+    compass = {
+        id = "compass",
+        name = "Compass",
+        description = "Consume to unlock a directional compass HUD.",
+        model = "CompassModel",
+        category = Categories.Functional,
+        actionType = ActionConstants.Functional.UNLOCK_COMPASS,
+        components = {
+            Draggable = { force = 6000, maxDistance = 30, dampening = 0.5 },
+            Hoverable = {
+                displayName = "Compass",
+                description = "Consume to unlock a directional compass HUD.",
+                highlightColor = Color3.fromRGB(135, 206, 235)
+            },
+            Inventoryable = {
+                stackable = false,
+                maxStack = 1,
+                inventoryIcon = "🧭",
+                canPickup = true
+            }
+        }
+    },
+
+    -- CLOCK (consumable unlock)
+    clock = {
+        id = "clock",
+        name = "Clock",
+        description = "Consume to unlock the clock display.",
+        model = "ClockModel",
+        category = Categories.Functional,
+        actionType = ActionConstants.Functional.UNLOCK_CLOCK,
+        components = {
+            Draggable = { force = 6000, maxDistance = 30, dampening = 0.5 },
+            Hoverable = {
+                displayName = "Clock",
+                description = "Consume to unlock the clock display.",
+                highlightColor = Color3.fromRGB(135, 206, 235)
+            },
+            Inventoryable = {
+                stackable = false,
+                maxStack = 1,
+                inventoryIcon = "⏰",
                 canPickup = true
             }
         }

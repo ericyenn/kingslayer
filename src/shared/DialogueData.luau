@@ -16,6 +16,16 @@ DialogueData.NPCDialogues = {
 		actions = {"quest_info", "show_lore", "goodbye"}
 	},
 	
+	wise_man_quest_completed = {
+		text = "Thank you for rescuing my daughter! You have proven yourself a true hero. Here is your reward!\n\n• [Get Reward] - I'll take the summoner\n• [Depart] - Thank you for the reward",
+		actions = {"give_reward", "goodbye"}
+	},
+	
+	wise_man_reward_claimed = {
+		text = "You have already received your reward for rescuing my daughter. May your journey be blessed with wisdom and strength.",
+		actions = {"goodbye"}
+	},
+	
 	-- Princess NPC - Only appears after quest is taken
 	princess = {
 		text = "Oh brave hero! You've found me! Please help break this terrible curse!\n\n• [Break Curse - Become Companion] - I'll escort you to safety\n• [Leave Cursed] - I cannot help you right now",
@@ -32,6 +42,12 @@ DialogueData.NPCDialogues = {
 	regular_npc = {
 		text = "Hello there, traveler! Care to hear a tale?\n\n• [Hear Story] - I'd love to listen\n• [Move Along] - Maybe another time",
 		actions = {"tell_story", "goodbye"}
+	},
+	
+	-- Lying Tom NPC
+	lying_tom = {
+		text = "I have nothing to tell you, stranger.",
+		actions = {"goodbye"}
 	}
 }
 
@@ -53,6 +69,11 @@ DialogueData.ResponseDialogues = {
 		text = "Thank you! I am free! I shall accompany you on your adventures!",
 		actions = {}
 	},
+	
+	give_reward = {
+		text = "The summoner has been placed before you. Use it wisely!",
+		actions = {}
+	},
 	open_trade = {
 		text = "Choose your trades wisely! I have the finest goods in the realm!",
 		actions = {}
@@ -63,6 +84,11 @@ DialogueData.ResponseDialogues = {
 	},
 	tell_story = {
 		text = "Once upon a time, in a village much like this one, a great dragon threatened all who lived here. But a brave hero rose to challenge the beast, and that's how our town was saved!",
+		actions = {}
+	},
+	
+	lying_tom_lie = {
+		text = "Listen carefully... whatever you do, don't go [DIRECTION]. That's where you'll find nothing but trouble.",
 		actions = {}
 	}
 }

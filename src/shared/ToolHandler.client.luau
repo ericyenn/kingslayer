@@ -105,43 +105,18 @@ local function createVisualShapeCast(centerPosition, radius, color, hasHit, orie
     return shapePart, centerPart
 end
 
-local function performHitboxDetection(character, centerPosition, radius)
-    -- Use the new HitboxSystem for detection
+local function performHitboxDetection(character, playerPosition, playerForward, hitboxLength, hitboxSize)
+    -- Use the new HitboxSystem for detection with player-centered bounding box
     local filters = {
         ignoreFloor = SHAPE_CAST_CONFIG.ignoreFloor
     }
     
-    -- Get player's facing direction for proper hitbox orientation
-    local cameraDirection = camera.CFrame.LookVector
-    local playerForward = Vector3.new(cameraDirection.X, 0, cameraDirection.Z).Unit -- Keep horizontal only
-    local orientation = CFrame.Angles(0, math.atan2(playerForward.X, playerForward.Z), 0)
-    
-    return HitboxSystem.performDetection(character, centerPosition, radius, filters, orientation)
+    return HitboxSystem.performDetection(character, playerPosition, playerForward, hitboxLength, hitboxSize, filters)
 end
 
--- Helper function to check if a part can take damage
+-- Use unified damage detection from HitboxSystem
 local function canPartTakeDamage(part)
-    if not part or not part.Parent then
-        return false
-    end
-    
-    -- Check if the part's parent has a Humanoid (NPCs, players)
-    local parent = part.Parent
-    if parent and parent:FindFirstChild("Humanoid") then
-        return true
-    end
-    
-    -- Check if the part is part of a character model
-    -- Look for Humanoid in the model hierarchy
-    local model = part.Parent
-    while model and model ~= workspace do
-        if model:FindFirstChild("Humanoid") then
-            return true
-        end
-        model = model.Parent
-    end
-    
-    return false
+    return HitboxSystem.canPartTakeDamage(part)
 end
 
 -- Helper function to find the best damage target from detected parts
@@ -479,11 +454,8 @@ onUse = function(attackType)
         local cameraDirection = camera.CFrame.LookVector
         local playerForward = Vector3.new(cameraDirection.X, 0, cameraDirection.Z).Unit -- Keep horizontal only
         
-        -- Calculate hitbox center position using item-specific distance
-        local hitboxCenter = rootPart.Position + playerForward * itemSettings.distance
-        
-        -- Perform the hitbox detection with item-specific size
-        local detectedParts = performHitboxDetection(character, hitboxCenter, itemSettings.size)
+        -- Perform the hitbox detection with player-centered bounding box
+        local detectedParts = performHitboxDetection(character, rootPart.Position, playerForward, itemSettings.distance, itemSettings.size)
         
         local hasHit = #detectedParts > 0
         
@@ -495,13 +467,15 @@ onUse = function(attackType)
             local cameraDirection = camera.CFrame.LookVector
             local playerForward = Vector3.new(cameraDirection.X, 0, cameraDirection.Z).Unit
             local orientation = CFrame.Angles(0, math.atan2(playerForward.X, playerForward.Z), 0)
-            createVisualShapeCast(hitboxCenter, itemSettings.size, "Bright green", true, orientation)
+            local hitboxCenter = rootPart.Position + playerForward * (itemSettings.distance / 2)
+            createVisualShapeCast(hitboxCenter, Vector3.new(itemSettings.size.X, itemSettings.size.Y, itemSettings.distance), "Bright green", true, orientation)
         else
             -- Create visual hitbox (red for miss) with proper orientation
             local cameraDirection = camera.CFrame.LookVector
             local playerForward = Vector3.new(cameraDirection.X, 0, cameraDirection.Z).Unit
             local orientation = CFrame.Angles(0, math.atan2(playerForward.X, playerForward.Z), 0)
-            createVisualShapeCast(hitboxCenter, itemSettings.size, "Bright red", false, orientation)
+            local hitboxCenter = rootPart.Position + playerForward * (itemSettings.distance / 2)
+            createVisualShapeCast(hitboxCenter, Vector3.new(itemSettings.size.X, itemSettings.size.Y, itemSettings.distance), "Bright red", false, orientation)
         end
     end
 

@@ -43,7 +43,7 @@ function DialogueUI:CreateDialogueSystem()
 	speakerLabel.BackgroundTransparency = 1
 	speakerLabel.Text = "Speaker"
 	speakerLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
-	speakerLabel.TextSize = 16
+	speakerLabel.TextSize = 22
 	speakerLabel.TextWrapped = true
 	speakerLabel.Font = Enum.Font.GothamBold
 	speakerLabel.TextXAlignment = Enum.TextXAlignment.Center

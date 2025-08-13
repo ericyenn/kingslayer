@@ -3,11 +3,12 @@ local InventoryServerSystem = {}
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local ServerStorage = game:GetService("ServerStorage")
 local CollectionService = game:GetService("CollectionService")
 
 local RemoteEvents = require(ReplicatedStorage.Shared.RemoteEvents)
 local ECS = require(ReplicatedStorage.Shared.ECS)
-local Constants = require(ReplicatedStorage.Shared.Constants)
+local _Constants = require(ReplicatedStorage.Shared.Constants)
 
 -- Player inventory storage (server-side)
 local playerInventories = {}
@@ -64,12 +65,16 @@ function InventoryServerSystem:CleanupPlayerInventory(player)
         end
     end
     
-    -- Drop all inventory items to world
+    -- Drop all inventory items to world and destroy any cached Tools
     if playerInventories[player] then
         for slot, inventoryItem in pairs(playerInventories[player]) do
             if inventoryItem then
                 pcall(function()
                     self:DropItemToWorld(player, inventoryItem.object)
+                end)
+                -- Ensure cached tool is destroyed and slot cleared
+                pcall(function()
+                    self:RemoveItemBySlot(player, slot)
                 end)
             end
         end
@@ -235,9 +240,8 @@ function InventoryServerSystem:DropFromInventory(player, slot)
         object.Anchored = false
     end
     
-    -- Remove from inventory
-    playerInventories[player][slot] = nil
-    
+    -- Clear the slot and destroy any cached tool for this item
+    self:RemoveItemBySlot(player, slot)
     return true, "Successfully dropped"
 end
 
@@ -379,47 +383,47 @@ function InventoryServerSystem:CreateToolInCharacter(player, slot)
         warn("Cannot create tool: player has no character")
         return
     end
-    -- Remove any existing tool first
+    -- If this inventory item already has a tool instance, reuse it
+    if inventoryItem.activeTool then
+        inventoryItem.activeTool.Parent = character
+        return
+    end
+
+    -- Remove any existing equipped tool first
     self:RemoveToolFromCharacter(player)
+
     local originalObject = inventoryItem.object
-    -- Create Tool object
+    -- Create Tool object (first-time creation only)
     local tool = Instance.new("Tool")
     tool.Name = originalObject.Name
     tool.RequiresHandle = true
-    tool.CanBeDropped = false -- Prevent default Roblox dropping
-    -- Use normal grip orientation for natural tool positioning
-    tool.GripForward = Vector3.new(0, 0, 1)  -- Forward (Z-axis)
-    tool.GripRight = Vector3.new(0, 0, -1)    -- Backward (negative Z-axis) to flip the weapon
-    tool.GripUp = Vector3.new(0, 1, 0)        -- Up (Y-axis)
-    tool.GripPos = Vector3.new(0, 0, 0)       -- No offset
-    
+    tool.CanBeDropped = false
+    tool.GripForward = Vector3.new(0, 0, 1)
+    tool.GripRight = Vector3.new(0, 0, -1)
+    tool.GripUp = Vector3.new(0, 1, 0)
+    tool.GripPos = Vector3.new(0, 0, 0)
+
     -- Copy tags from the original object to the tool
     local CollectionService = game:GetService("CollectionService")
     local originalTags = CollectionService:GetTags(originalObject)
     for _, tag in ipairs(originalTags) do
         CollectionService:AddTag(tool, tag)
-        print("Copied tag", tag, "from", originalObject.Name, "to tool", tool.Name)
     end
 
     local handle
     if originalObject:IsA("Model") then
-        -- Clone the model
         local modelClone = originalObject:Clone()
-        -- Find the part named 'Handle' inside the model
         handle = modelClone:FindFirstChild("Handle")
         if not handle or not handle:IsA("BasePart") then
             warn("Model does not contain a BasePart named 'Handle'")
             return
         end
-        -- Parent the handle directly to the tool
         handle.Parent = tool
-        -- Parent all other parts (that are welded) directly to the tool as well
         for _, obj in ipairs(modelClone:GetChildren()) do
             if obj ~= handle and obj:IsA("BasePart") then
                 obj.Parent = tool
             end
         end
-        -- Unanchor and set physics for all parts
         for _, part in ipairs(tool:GetChildren()) do
             if part:IsA("BasePart") then
                 part.Anchored = false
@@ -430,7 +434,6 @@ function InventoryServerSystem:CreateToolInCharacter(player, slot)
             end
         end
     else
-        -- Single-part item
         handle = originalObject:Clone()
         handle.Name = "Handle"
         handle.Anchored = false
@@ -440,32 +443,28 @@ function InventoryServerSystem:CreateToolInCharacter(player, slot)
         handle.CollisionGroup = "Default"
         handle.Parent = tool
     end
-    -- Add tool interaction script
+
+    -- Add tool interaction script once
     self:AddToolScript(tool)
-    -- Equip the tool
+
+    -- Equip the tool and cache it for reuse
     tool.Parent = character
-    -- Store reference for cleanup
     inventoryItem.activeTool = tool
 end
 
 function InventoryServerSystem:RemoveToolFromCharacter(player)
-    -- Simple approach: remove all tools from character
+    -- Move only inventory-created tools out of the character for reuse
     local character = player.Character
     if not character then return end
-    
-    -- Clear activeTool references first
-    if playerInventories[player] then
-        for slot, inventoryItem in pairs(playerInventories[player]) do
-            if inventoryItem then
-                inventoryItem.activeTool = nil
-            end
-        end
-    end
-    
-    -- Remove all tools from character
-    for _, child in pairs(character:GetChildren()) do
-        if child:IsA("Tool") then
-            pcall(function() child:Destroy() end)
+
+    -- Check if player has any equipped inventory tools
+    local equippedSlot = playerEquippedSlots[player]
+    if equippedSlot and playerInventories[player] and playerInventories[player][equippedSlot] then
+        local inventoryItem = playerInventories[player][equippedSlot]
+        if inventoryItem and inventoryItem.activeTool and inventoryItem.activeTool.Parent == character then
+            pcall(function()
+                inventoryItem.activeTool.Parent = ServerStorage
+            end)
         end
     end
 end
@@ -619,6 +618,11 @@ function InventoryServerSystem:ConsumeItem(player, slot)
         playerEquippedSlots[player] = nil
     end
     
+    -- Before destroying, check special behaviors by item name
+    local consumedName = inventoryItem.itemName and string.lower(inventoryItem.itemName) or ""
+    local isCompass = (consumedName == "compass")
+    local isClock = (consumedName == "clock")
+    
     -- Destroy the item object completely (it's consumed)
     if inventoryItem.object and inventoryItem.object.Parent then
         pcall(function()
@@ -626,9 +630,31 @@ function InventoryServerSystem:ConsumeItem(player, slot)
         end)
     end
     
-    -- Remove from inventory
-    playerInventories[player][slot] = nil
+    -- Clear slot and destroy any cached tool
+    self:RemoveItemBySlot(player, slot)
     
+    -- Post-consume side effects
+    if isCompass then
+        -- Replicate unlock via player attribute and optional event
+        pcall(function()
+            player:SetAttribute("HasCompass", true)
+        end)
+        
+        -- Add tag for Lying Tom dialogue
+        local CollectionService = game:GetService("CollectionService")
+        CollectionService:AddTag(player, "UsedCompass")
+
+        
+        local compassEvent = ReplicatedStorage:FindFirstChild("CompassUnlocked")
+        if compassEvent and compassEvent:IsA("RemoteEvent") then
+            compassEvent:FireClient(player)
+        end
+    elseif isClock then
+        pcall(function()
+            player:SetAttribute("HasClock", true)
+        end)
+    end
+
     print("Successfully consumed item:", inventoryItem.itemName, "for player", player.Name)
     print("DEBUG: Server returning success=true, message='Item consumed'")
     return true, "Item consumed"
@@ -648,18 +674,16 @@ function InventoryServerSystem:DropAllItemsOnDeath(player)
         playerEquippedSlots[player] = nil
     end
     
-    -- Drop all inventory items to world
+    -- Drop all inventory items to world and clear slots (destroy cached tools)
     for slot, inventoryItem in pairs(playerInventories[player]) do
         if inventoryItem and inventoryItem.object then
             pcall(function()
                 self:DropItemToWorld(player, inventoryItem.object)
             end)
+            pcall(function()
+                self:RemoveItemBySlot(player, slot)
+            end)
         end
-    end
-    
-    -- Clear the inventory (but keep the player data structure)
-    for i = 1, 10 do
-        playerInventories[player][i] = nil
     end
     
     -- Notify client of inventory update

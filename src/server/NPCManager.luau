@@ -26,7 +26,8 @@ local spawnPositions = {
 	wise_man = Vector3.new(0, 0, 0),
 	trader = Vector3.new(20, 0, 0),
 	regular_npc = Vector3.new(-20, 0, 0),
-	princess = Vector3.new(0, 0, 30) -- Tower location
+	princess = Vector3.new(0, 0, 30), -- Tower location
+	lying_tom = Vector3.new(-40, 0, 0) -- Lying Tom position
 }
 
 -- Find proper ground position using raycast
@@ -231,6 +232,8 @@ function NPCManager:Cleanup()
 	
 	-- Clear all state
 	self.questActive = false
+	self.questCompleted = false
+	self.rewardClaimed = false
 end
 
 -- Start the quest (spawn princess)
@@ -242,6 +245,72 @@ function NPCManager:StartQuest()
 		
 		-- Notify all clients that quest is active
 		RemoteEvents.ShowOverheadText:FireAllClients("wise_man", "A princess lies trapped by dark magic! Find her in the tower!")
+	end
+end
+
+-- Complete the quest when princess is brought to wise man
+function NPCManager:CompleteQuest()
+	if self.questActive and not self.questCompleted then
+		self.questActive = false
+		self.questCompleted = true
+		
+		-- Destroy princess
+		local princess = self.spawnedNPCs["princess"]
+		if princess then
+			princess:Destroy()
+			self.spawnedNPCs["princess"] = nil
+		end
+		
+		-- Clean up follow connection
+		if self.followConnections["princess"] then
+			self.followConnections["princess"]:Disconnect()
+			self.followConnections["princess"] = nil
+		end
+		
+		-- Show quest completion notification to all players
+		local NotificationSystem = require(ReplicatedStorage.Shared.NotificationSystem)
+		NotificationSystem:ShowToAll("Quest Complete: Talk to the Wise Man!", NotificationSystem.TYPES.QUEST_COMPLETE, 8)
+		
+		print("Quest completed! Princess returned to wise man.")
+	end
+end
+
+-- Spawn reward item (summoner)
+function NPCManager:SpawnReward()
+	local wiseMan = self.spawnedNPCs["wise_man"]
+	if not wiseMan then return end
+	
+	-- Calculate position in front of wise man
+	local wiseManRoot = wiseMan:FindFirstChild("HumanoidRootPart")
+	if not wiseManRoot then return end
+	
+	local spawnPosition = wiseManRoot.Position + (wiseManRoot.CFrame.LookVector * 3)
+	
+	-- Use existing item spawn system
+	_G.ItemSpawnSystem.SpawnItem("summoner", spawnPosition)
+	
+	print("Summoner reward spawned at", spawnPosition)
+end
+
+-- Check princess proximity to wise man (runs once per second)
+function NPCManager:CheckPrincessProximity()
+	if not self.questActive or self.questCompleted then return end
+	
+	local princess = self.spawnedNPCs["princess"]
+	local wiseMan = self.spawnedNPCs["wise_man"]
+	
+	if not princess or not wiseMan then return end
+	
+	local princessRoot = princess:FindFirstChild("HumanoidRootPart")
+	local wiseManRoot = wiseMan:FindFirstChild("HumanoidRootPart")
+	
+	if not princessRoot or not wiseManRoot then return end
+	
+	local distance = (princessRoot.Position - wiseManRoot.Position).Magnitude
+	
+	if distance <= 10 then
+		print("Princess within 10 studs of wise man - completing quest!")
+		self:CompleteQuest()
 	end
 end
 
@@ -343,8 +412,18 @@ function NPCManager:Initialize()
 	self:SpawnNPC("wise_man")
 	self:SpawnNPC("trader")
 	self:SpawnNPC("regular_npc")
+	self:SpawnNPC("lying_tom")
 	
-	print("NPCManager initialized - 3 NPCs spawned")
+	-- Set up proximity checking for quest completion (runs once per second)
+	local proximityConnection
+	proximityConnection = RunService.Heartbeat:Connect(function()
+		-- Only check once per second to avoid performance issues
+		if tick() % 1 < 0.016 then -- Check roughly once per second
+			self:CheckPrincessProximity()
+		end
+	end)
+	
+	print("NPCManager initialized - 4 NPCs spawned")
 end
 
 return NPCManager 

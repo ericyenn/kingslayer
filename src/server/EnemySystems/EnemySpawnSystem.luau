@@ -157,7 +157,8 @@ function EnemySpawnSystem.spawnAllEnemies()
 					movementZone.Size = Vector3.new(40, 1, 40) -- 40x1x40 stud flat movement/detection area
 					movementZone.Position = Vector3.new(spawnPosition.X, 0.5, spawnPosition.Z) -- Ground level
 					movementZone.Anchored = true
-					movementZone.CanCollide = false
+					movementZone.CanCollide = false -- Non-collidable
+					movementZone.CanTouch = false -- Non-touchable
 					movementZone.Transparency = 0.8 -- Semi-transparent for visibility
 					movementZone.Color = Color3.new(0, 1, 0) -- Green color for visibility
 					movementZone.Material = Enum.Material.Neon
@@ -175,8 +176,8 @@ function EnemySpawnSystem.spawnAllEnemies()
 					print("  Zone size:", movementZone.Size)
 					print("  Zone CFrame:", movementZone.CFrame)
 					
-					-- Destroy the part - we only need the data for mathematical detection
-					movementZone:Destroy()
+					-- Keep the movement zone part instead of destroying it
+					-- It's now non-collidable, anchored, and non-touchable
 					
 					-- Set position attribute
 					enemyFolder:SetAttribute("Position", spawnPosition)

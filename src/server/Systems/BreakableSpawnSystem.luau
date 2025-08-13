@@ -24,11 +24,28 @@ local SPAWN_CONFIG = {
 -- Internal state
 local spawnedBreakables = {}
 
+-- Helper function to check if StructureModels folder exists and list available models
+function BreakableSpawnSystem:DebugStructureModels()
+    local structureModels = ReplicatedStorage:FindFirstChild("StructureModels")
+    if not structureModels then
+        print("BreakableSpawnSystem: StructureModels folder not found in ReplicatedStorage")
+        return
+    end
+    
+    print("BreakableSpawnSystem: Available models in StructureModels:")
+    for _, model in ipairs(structureModels:GetChildren()) do
+        print("  -", model.Name)
+    end
+end
+
 function BreakableSpawnSystem:Initialize()
     print("BreakableSpawnSystem: Initializing...")
     
     -- Register with system manager
     SystemManager.RegisterSystem("BreakableSpawnSystem", self)
+    
+    -- Debug: Check available structure models
+    self:DebugStructureModels()
     
     -- Initial spawn of breakables
     self:SpawnInitialBreakables()
@@ -117,24 +134,119 @@ function BreakableSpawnSystem:SpawnBreakable(breakableId, position)
 end
 
 function BreakableSpawnSystem:CreateBreakableObject(breakableDef, position)
-    -- Create a simple part as placeholder (you can replace with actual models)
-    local breakable = Instance.new("Part")
-    breakable.Name = breakableDef.name
-    breakable.Size = Vector3.new(3, 6, 3)
-    breakable.Position = position
-    breakable.Anchored = true
-    breakable.CanCollide = true
+    local breakable = nil
     
-    -- Set material and color based on type
-    if breakableDef.breakableType == "tree" then
-        breakable.Material = Enum.Material.Wood
-        breakable.Color = Color3.fromRGB(139, 69, 19)
-    elseif breakableDef.breakableType == "rock" then
-        breakable.Material = Enum.Material.Concrete
-        breakable.Color = Color3.fromRGB(128, 128, 128)
-    elseif breakableDef.breakableType == "crystal" then
-        breakable.Material = Enum.Material.Glass
-        breakable.Color = Color3.fromRGB(138, 43, 226)
+    -- Try to load custom model from StructureModels folder
+    if breakableDef.model then
+        local structureModels = ReplicatedStorage:FindFirstChild("StructureModels")
+        if structureModels then
+            local modelTemplate = structureModels:FindFirstChild(breakableDef.model)
+            if modelTemplate then
+                breakable = modelTemplate:Clone()
+                print("BreakableSpawnSystem: Loaded custom model:", breakableDef.model, "for", breakableDef.name)
+            else
+                warn("BreakableSpawnSystem: Model not found in ReplicatedStorage/StructureModels/:", breakableDef.model)
+                local availableModels = {}
+                for _, model in ipairs(structureModels:GetChildren()) do
+                    table.insert(availableModels, model.Name)
+                end
+                print("BreakableSpawnSystem: Available models:", table.concat(availableModels, ", "))
+            end
+        else
+            warn("BreakableSpawnSystem: StructureModels folder not found in ReplicatedStorage")
+        end
+    end
+    
+    -- Create fallback part if no model found
+    if not breakable then
+        print("BreakableSpawnSystem: Using fallback basic part for:", breakableDef.name)
+        breakable = Instance.new("Part")
+        breakable.Size = Vector3.new(3, 6, 3)
+        breakable.Anchored = true
+        breakable.CanCollide = true
+        
+        -- Set material and color based on type
+        if breakableDef.breakableType == "tree" then
+            breakable.Material = Enum.Material.Wood
+            breakable.Color = Color3.fromRGB(139, 69, 19)
+        elseif breakableDef.breakableType == "rock" then
+            breakable.Material = Enum.Material.Concrete
+            breakable.Color = Color3.fromRGB(128, 128, 128)
+        elseif breakableDef.breakableType == "crystal" then
+            breakable.Material = Enum.Material.Glass
+            breakable.Color = Color3.fromRGB(138, 43, 226)
+        end
+    end
+    
+    -- Set the correct name from breakable definition
+    breakable.Name = breakableDef.name
+    
+    -- Position the breakable
+    if breakable:IsA("Model") then
+        -- Ensure model has a primary part
+        if not breakable.PrimaryPart then
+            local largestPart = nil
+            local largestVolume = 0
+            for _, part in pairs(breakable:GetChildren()) do
+                if part:IsA("BasePart") then
+                    local volume = part.Size.X * part.Size.Y * part.Size.Z
+                    if volume > largestVolume then
+                        largestVolume = volume
+                        largestPart = part
+                    end
+                end
+            end
+            if largestPart then
+                breakable.PrimaryPart = largestPart
+                print("BreakableSpawnSystem: Set PrimaryPart for model:", breakableDef.name, "to:", largestPart.Name)
+            else
+                warn("BreakableSpawnSystem: No suitable part found for PrimaryPart in model:", breakableDef.name)
+            end
+        end
+        
+        -- Position the model using its primary part
+        if breakable.PrimaryPart then
+            -- Find the lowest point of the model
+            local lowestY = math.huge
+            for _, part in ipairs(breakable:GetDescendants()) do
+                if part:IsA("BasePart") then
+                    local partBottom = part.Position.Y - (part.Size.Y / 2)
+                    if partBottom < lowestY then
+                        lowestY = partBottom
+                    end
+                end
+            end
+            
+            -- Calculate how much we need to raise the model to place its bottom at ground level
+            local modelBottom = breakable.PrimaryPart.Position.Y - (breakable.PrimaryPart.Size.Y / 2)
+            local raiseAmount = modelBottom - lowestY
+            
+            -- Position the model so its actual bottom touches the ground
+            local adjustedPosition = position + Vector3.new(0, raiseAmount, 0)
+            
+            breakable:SetPrimaryPartCFrame(CFrame.new(adjustedPosition))
+            
+            print("BreakableSpawnSystem: Model bottom at Y:", lowestY)
+            print("BreakableSpawnSystem: PrimaryPart bottom at Y:", modelBottom)
+            print("BreakableSpawnSystem: Raise amount:", raiseAmount)
+            print("BreakableSpawnSystem: Ground position:", position)
+            print("BreakableSpawnSystem: Adjusted position:", adjustedPosition)
+            
+            -- Make all parts anchored and collidable
+            for _, part in ipairs(breakable:GetDescendants()) do
+                if part:IsA("BasePart") then
+                    part.Anchored = true
+                    part.CanCollide = true
+                end
+            end
+        else
+            warn("BreakableSpawnSystem: Could not position model - no primary part found:", breakableDef.name)
+        end
+    else
+        -- Handle single part breakables
+        breakable.Position = position
+        breakable.Anchored = true
+        breakable.CanCollide = true
     end
     
     -- Add ECS components

@@ -18,6 +18,8 @@ ActionConstants.Functional = {
     SUMMONER = "summoner_action",
     REVIVE_PLUSH = "revive_plush_action",
     PHILOSOPHERS_STONE = "philosophers_stone_action",
+    UNLOCK_COMPASS = "unlock_compass_action",
+    UNLOCK_CLOCK = "unlock_clock_action",
     DEFAULT = "default_action"
 }
 

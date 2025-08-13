@@ -13,6 +13,9 @@ local DialogueHandler = {}
 -- Track active dialogues {[player] = {npcId, startTime}}
 DialogueHandler.activeDialogues = {}
 
+-- Track lying direction for current session (persists until server restart)
+DialogueHandler.currentLyingDirection = nil
+
 -- ENHANCED: Track RunService connection for cleanup
 local distanceMonitorConnection = nil
 
@@ -26,11 +29,65 @@ end
 function DialogueHandler:GetDialogueForNPC(npcId, player)
 	-- Handle wise man state changes
 	if npcId == "wise_man" then
-		if NPCManager.questActive then
+		if NPCManager.rewardClaimed then
+			return DialogueData.NPCDialogues.wise_man_reward_claimed
+		elseif NPCManager.questCompleted then
+			return DialogueData.NPCDialogues.wise_man_quest_completed
+		elseif NPCManager.questActive then
 			return DialogueData.NPCDialogues.wise_man_quest_active
 		else
 			return DialogueData.NPCDialogues.wise_man_default
 		end
+	end
+	
+	-- Handle lying tom conditional dialogue
+	if npcId == "lying_tom" then
+		local CollectionService = game:GetService("CollectionService")
+
+		if CollectionService:HasTag(player, "UsedCompass") then
+			-- Calculate princess direction from Tom's position and generate lie (only once)
+			if not self.currentLyingDirection then
+				local tomNPC = NPCManager.spawnedNPCs["lying_tom"]
+				local princessNPC = NPCManager.spawnedNPCs["princess"]
+				
+				if tomNPC and princessNPC and tomNPC:FindFirstChild("HumanoidRootPart") and princessNPC:FindFirstChild("HumanoidRootPart") then
+					local tomPosition = tomNPC:FindFirstChild("HumanoidRootPart").Position
+					local princessPosition = princessNPC:FindFirstChild("HumanoidRootPart").Position
+					local directionVector = princessPosition - tomPosition
+					
+					-- Determine actual princess direction
+					local x = math.abs(directionVector.X)
+					local z = math.abs(directionVector.Z)
+					local actualDirection
+					if x > z then
+						actualDirection = directionVector.X > 0 and "East" or "West"
+					else
+						actualDirection = directionVector.Z > 0 and "North" or "South"
+					end
+					
+					-- Generate lying direction (one of the three wrong directions)
+					local directions = {"North", "South", "East", "West"}
+					local wrongDirections = {}
+					for _, direction in ipairs(directions) do
+						if direction ~= actualDirection then
+							table.insert(wrongDirections, direction)
+						end
+					end
+					self.currentLyingDirection = wrongDirections[math.random(1, #wrongDirections)]
+				end
+			end
+			
+			-- Return dialogue with the stored lying direction
+			if self.currentLyingDirection then
+				return {
+					text = "Listen carefully... whatever you do, don't go " .. self.currentLyingDirection .. ". That's where you'll find nothing but trouble.\n\n• [Leave] - I understand",
+					actions = {"goodbye"}
+				}
+					end
+	end
+	
+	-- Return dialogue for other NPCs
+	return DialogueData.NPCDialogues[npcId]
 	end
 	
 	-- Return dialogue for other NPCs
@@ -150,6 +207,24 @@ function DialogueHandler:ExecuteAction(player, npcId, action)
 	elseif action == "become_companion" then
 		-- Make princess follow player
 		NPCManager:MakePrincessFollow(player)
+		if responseDialogue then
+			-- Show response, then auto-end dialogue after delay
+			RemoteEvents.DisplayDialogue:FireClient(player, npcId, responseDialogue)
+			task.spawn(function()
+				task.wait(3)
+				self:EndDialogue(player)
+			end)
+		else
+			self:EndDialogue(player)
+		end
+		
+	elseif action == "give_reward" then
+		-- Spawn summoner item as reward
+		NPCManager:SpawnReward()
+		
+		-- Mark reward as claimed
+		NPCManager.rewardClaimed = true
+		
 		if responseDialogue then
 			-- Show response, then auto-end dialogue after delay
 			RemoteEvents.DisplayDialogue:FireClient(player, npcId, responseDialogue)
@@ -361,5 +436,7 @@ function DialogueHandler:Initialize()
 	
 	print("DialogueHandler initialized")
 end
+
+
 
 return DialogueHandler 

@@ -28,7 +28,13 @@ local SimpleMovementSystem = require(script.Parent.SimpleMovementSystem)
 -- Import DamageSystem for applying damage
 local DamageSystem = require(script.Parent.Parent.Systems.DamageSystem)
 
+-- Import ProjectileManager for proper projectile creation
+local ProjectileManager = require(script.Parent.Parent.ProjectileManager)
+
 local RangedChaseHandler = {}
+
+-- Per-enemy attack cooldowns: {enemyId = lastAttackTime}
+local enemyAttackCooldowns = {}
 
 -- Default configuration for ranged enemies (fallback values)
 local DEFAULT_RANGED_CONFIG = {
@@ -38,11 +44,13 @@ local DEFAULT_RANGED_CONFIG = {
     PROJECTILE_SIZE = Vector3.new(0.2, 0.2, 0.2),
     PROJECTILE_COLOR = Color3.fromRGB(255, 100, 50),  -- Orange-red
     PROJECTILE_LIFETIME = 3,         -- seconds before cleanup
+    ATTACK_RANGE = 40,               -- Increased to 40 studs
 }
 
 -- Clean up ranged chase handler for an entity
 function RangedChaseHandler.cleanup(entityId)
-    -- No state to clean up - handlers are stateless
+    -- Clean up cooldown data
+    enemyAttackCooldowns[entityId] = nil
     print("🧹 RangedChaseHandler: Cleaned up entity", entityId)
 end
 
@@ -66,6 +74,7 @@ local function getEnemyRangedConfig(entityId)
         PROJECTILE_COLOR = config.projectileColor or DEFAULT_RANGED_CONFIG.PROJECTILE_COLOR,
         PROJECTILE_LIFETIME = config.projectileLifetime or DEFAULT_RANGED_CONFIG.PROJECTILE_LIFETIME,
         PROJECTILE_TYPE = config.projectileType or "default",
+        ATTACK_RANGE = config.attackRange or DEFAULT_RANGED_CONFIG.ATTACK_RANGE,
     }
 end
 
@@ -80,16 +89,26 @@ function RangedChaseHandler.handleChase(entityId, enemyAI, currentPosition, best
     local config = getEnemyRangedConfig(entityId)
     local baseSpeed = enemyAI.speed or 16
     
-    -- Simple ranged behavior - move to random position in zone and shoot when in range
-    local attackRange = 20 -- Default attack range
+    -- Use configured attack range
+    local attackRange = config.ATTACK_RANGE
     
     -- Calculate distance to target for attack range check only
     local targetPosition = bestTarget.position
     local distance = (currentPosition - targetPosition).Magnitude
     
     if distance <= attackRange then
-        -- In range - stop and shoot
-        SimpleMovementSystem.clearPosition(entityId)
+        -- In range - stop movement but keep position for shooting
+        -- Don't clear position since we need it for projectile creation
+        
+        -- Check attack cooldown
+        local currentTime = tick()
+        local lastAttackTime = enemyAttackCooldowns[entityId]
+        local attackCooldown = 1.0 / config.ATTACK_SPEED -- Convert attack speed to cooldown
+        
+        if lastAttackTime and (currentTime - lastAttackTime) < attackCooldown then
+            -- Still on cooldown, don't attack
+            return
+        end
         
         -- Play aim animation before shooting
         local enemyFolder = workspace:FindFirstChild("Enemies"):FindFirstChild(tostring(entityId))
@@ -98,7 +117,9 @@ function RangedChaseHandler.handleChase(entityId, enemyAI, currentPosition, best
             print("🎯 Ranged enemy", entityId, "playing aim animation before shooting")
         end
         
+        -- Fire projectile and update cooldown
         RangedChaseHandler._fireProjectile(entityId, bestTarget, config, enemyAI.state)
+        enemyAttackCooldowns[entityId] = currentTime
     else
         -- Out of range - move to random position in zone
         local randomPosition = SimpleMovementSystem.getRandomPositionInZone(entityId)
@@ -108,7 +129,7 @@ function RangedChaseHandler.handleChase(entityId, enemyAI, currentPosition, best
     end
 end
 
--- Fire a projectile at the target
+-- Fire a projectile at the target using ProjectileManager
 function RangedChaseHandler._fireProjectile(entityId, bestTarget, config, state)
     -- Get current position from folder attribute
     local enemyFolder = workspace:FindFirstChild("Enemies"):FindFirstChild(tostring(entityId))
@@ -123,51 +144,54 @@ function RangedChaseHandler._fireProjectile(entityId, bestTarget, config, state)
         return
     end
     
-    local targetPosition = bestTarget.position
+    -- Try to find gun part for better projectile origin
+    local gunPosition = startPosition -- Fallback to base position
+    local enemyType = enemyFolder:GetAttribute("EnemyType")
     
-    -- Calculate direction to target
-    local direction = (targetPosition - startPosition).Unit
-    
-    -- Create projectile
-    local projectile = Instance.new("Part")
-    projectile.Name = "RangedProjectile"
-    projectile.Size = config.PROJECTILE_SIZE
-    projectile.Position = startPosition
-    projectile.Anchored = false
-    projectile.CanCollide = false
-    projectile.Color = config.PROJECTILE_COLOR
-    projectile.Material = Enum.Material.Neon
-    projectile.Parent = workspace
-    
-    -- Create body velocity for movement
-    local bodyVelocity = Instance.new("BodyVelocity")
-    bodyVelocity.Velocity = direction * config.PROJECTILE_SPEED
-    bodyVelocity.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
-    bodyVelocity.Parent = projectile
-    
-    -- Set up collision detection
-    local connection
-    connection = projectile.Touched:Connect(function(hit)
-        if hit.Parent and hit.Parent:FindFirstChild("Humanoid") then
-            -- Hit a target (player or NPC)
-            local humanoid = hit.Parent.Humanoid
-            if humanoid and humanoid.Health > 0 then
-                -- Apply damage using DamageSystem for consistency
-                local DamageSystem = require(script.Parent.Parent.Systems.DamageSystem)
-                DamageSystem:ApplyDamage(humanoid, config.PROJECTILE_DAMAGE, nil, "EnemyRangedAttack")
-                
-                local targetName = hit.Parent.Name
-                print("💥 Ranged projectile hit", targetName, "for", config.PROJECTILE_DAMAGE, "damage")
+    -- Look for gun part in the enemy model
+    local gunPart = nil
+    if enemyType then
+        -- Try to find the gun part by name
+        local gunNames = {"Gun", "Weapon", "Bow", "Rifle", "Pistol"}
+        for _, gunName in ipairs(gunNames) do
+            gunPart = enemyFolder:FindFirstChild(gunName)
+            if gunPart then
+                break
             end
         end
         
-        -- Clean up projectile
-        projectile:Destroy()
-        connection:Disconnect()
-    end)
+        -- If no gun found, try to find any part that might be a weapon
+        if not gunPart then
+            for _, child in ipairs(enemyFolder:GetChildren()) do
+                if child:IsA("BasePart") and (child.Name:find("Gun") or child.Name:find("Weapon") or child.Name:find("Bow")) then
+                    gunPart = child
+                    break
+                end
+            end
+        end
+    end
     
-    -- Clean up projectile after lifetime
-    Debris:AddItem(projectile, config.PROJECTILE_LIFETIME)
+    -- Use gun position if found, otherwise use base position
+    if gunPart then
+        gunPosition = gunPart.Position
+        print("🎯 Ranged enemy", entityId, "firing from gun part:", gunPart.Name)
+    else
+        print("🎯 Ranged enemy", entityId, "no gun part found, using base position")
+    end
+    
+    local targetPosition = bestTarget.position
+    
+    -- Create projectile using ProjectileManager
+    local projectileConfig = {
+        speed = config.PROJECTILE_SPEED,
+        damage = config.PROJECTILE_DAMAGE,
+        size = config.PROJECTILE_SIZE,
+        color = config.PROJECTILE_COLOR,
+        lifetime = config.PROJECTILE_LIFETIME,
+        projectileType = config.PROJECTILE_TYPE,
+    }
+    
+    ProjectileManager.createProjectile(gunPosition, targetPosition, projectileConfig)
     
     local targetName = bestTarget.target.Name
     print("🎯 Ranged enemy", entityId, "fired projectile toward", targetName)

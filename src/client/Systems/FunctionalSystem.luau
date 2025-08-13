@@ -70,6 +70,18 @@ functionalRegistry:SetDefaultAction(function(player, itemDef, target, actionData
     end
 end)
 
+-- Unlock compass action
+functionalRegistry:RegisterAction(ActionConstants.Functional.UNLOCK_COMPASS, function(player, itemDef, target, actionData)
+    -- Actual consumption will be handled by InventorySystem after this returns; server will set HasCompass
+    print("🧭 Unlocking compass HUD...")
+    -- No client-side changes here; client will react to attribute or event from server
+end)
+
+-- Unlock clock action
+functionalRegistry:RegisterAction(ActionConstants.Functional.UNLOCK_CLOCK, function(player, itemDef, target, actionData)
+    print("⏰ Unlocking clock UI...")
+end)
+
 function FunctionalSystem:Initialize()
     SystemManager.RegisterSystem("FunctionalSystem", self)
     print("Functional system initialized with", functionalRegistry:GetActionCount(), "functional actions")

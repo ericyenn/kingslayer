@@ -40,12 +40,19 @@ end
 -- Start the main game loop
 function SystemManager.startGameLoop()
     local RunService = game:GetService("RunService")
+    local lastUpdateTime = 0
     
     RunService.Heartbeat:Connect(function(deltaTime)
-        SystemManager.runAllSystems(deltaTime)
+        local currentTime = tick()
+        
+        -- Throttle to 10 FPS max (0.1 second intervals)
+        if currentTime - lastUpdateTime >= 0.1 then
+            SystemManager.runAllSystems(deltaTime)
+            lastUpdateTime = currentTime
+        end
     end)
     
-    print("🎮 Game loop started with", #SystemManager.systems, "systems")
+    print("🎮 Game loop started with", #SystemManager.systems, "systems (throttled to 10 FPS)")
 end
 
 -- Get system count

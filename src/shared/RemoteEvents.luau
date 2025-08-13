@@ -67,7 +67,7 @@ if RunService:IsServer() then
     local bossHealthUpdateRemote = createRemoteEvent("BossHealthUpdate")
 
     -- Server: Create prayer system RemoteEvent
-    local prayerRequestRemote = createRemoteEvent("PrayerRequest")
+    local _prayerRequestRemote = createRemoteEvent("PrayerRequest")
 
     -- Server: Create time system RemoteEvents
     local clockUpdateRemote = createRemoteEvent("ClockUpdate")
@@ -83,6 +83,11 @@ if RunService:IsServer() then
     
     -- Server: Create enemy attack validation RemoteEvent
     local enemyAttackRequestRemote = createRemoteEvent("EnemyAttackRequest")
+    
+    -- Server: Create notification system RemoteEvent
+    local showNotificationRemote = createRemoteEvent("ShowNotification")
+    -- Optional: Compass unlocked event for immediate client feedback
+    local compassUnlockedRemote = createRemoteEvent("CompassUnlocked")
     
     print("Server created DragRequest RemoteFunction") -- Debug
     print("Server created InventoryRequest RemoteFunction") -- Debug
@@ -138,6 +143,10 @@ if RunService:IsServer() then
     
     -- Enemy attack validation remote
     RemoteEvents.EnemyAttackRequest = enemyAttackRequestRemote
+    
+    -- Notification system remote
+    RemoteEvents.ShowNotification = showNotificationRemote
+    RemoteEvents.CompassUnlocked = compassUnlockedRemote
 else
     -- Client: Wait for the RemoteFunctions to be created by server (existing)
     local dragRequestRemote = ReplicatedStorage:WaitForChild("DragRequest")
@@ -191,6 +200,11 @@ else
     
     -- Client: Wait for enemy attack validation RemoteEvent
     local enemyAttackRequestRemote = ReplicatedStorage:WaitForChild("EnemyAttackRequest")
+    
+    -- Client: Wait for notification system RemoteEvent
+    local showNotificationRemote = ReplicatedStorage:WaitForChild("ShowNotification")
+    -- Optional: Compass unlocked event
+    local compassUnlockedRemote = ReplicatedStorage:WaitForChild("CompassUnlocked")
     
     print("Client found DragRequest RemoteFunction") -- Debug
     print("Client found InventoryRequest RemoteFunction") -- Debug
@@ -249,6 +263,10 @@ else
     
     -- Enemy attack validation remote
     RemoteEvents.EnemyAttackRequest = enemyAttackRequestRemote
+    
+    -- Notification system remote
+    RemoteEvents.ShowNotification = showNotificationRemote
+    RemoteEvents.CompassUnlocked = compassUnlockedRemote
 end
 
 return RemoteEvents 

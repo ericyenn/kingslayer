@@ -34,7 +34,7 @@ AISystem.name = "AISystem"
 
 -- Configuration
 local CONFIG = {
-	UPDATE_INTERVAL_IDLE = 1/8, -- 8 FPS for idle/patrol states
+	UPDATE_INTERVAL_IDLE = 1/10, -- 10 FPS for idle/patrol states
 	UPDATE_INTERVAL_CHASE = 1/10, -- 10 FPS for chase states
 	MAX_ENTITIES_PER_FRAME = 12,
 	
@@ -312,14 +312,11 @@ function AISystem._handleTalkingState(entityId, enemyAI, currentTime)
 		print("[AI] Entity", entityId, "talking ended, transitioning to patrol")
 		AISystem._setState(entityId, enemyAI, AI_STATES.PATROL)
 	else
-		-- Debug: Log remaining time occasionally
-		if math.floor(timeRemaining) % 2 == 0 and timeRemaining > 0 then
-			print("[AI] Entity", entityId, "still talking,", math.floor(timeRemaining), "seconds remaining")
-		end
+
 	end
 end
 
--- Handle attack chase state (identical to chase but no zone restrictions)
+-- Handle attack chase state (allows ranged enemies to attack within 40 studs, melee enemies have no zone restrictions)
 function AISystem._handleAttackChaseState(entityId, enemyAI, currentTime)
 	-- Check if attack chase time has expired (15 seconds)
 	local timeInAttackChase = currentTime - enemyAI.stateStartTime
@@ -331,15 +328,50 @@ function AISystem._handleAttackChaseState(entityId, enemyAI, currentTime)
 		return
 	end
 	
-	-- Same logic as normal chase but no zone restrictions
-	local bestTarget, bestDistance = AISystem._findBestTarget(entityId)
-	if bestTarget then
-		AISystem._callChaseHandler(entityId, enemyAI, bestTarget, currentTime)
+	-- Get enemy type to determine behavior
+	local enemyType = EntityManager.getComponent(entityId, "EnemyType")
+	if not enemyType then
+		warn("No EnemyType component found for entity", entityId, "- defaulting to melee behavior")
+		enemyType = {enemyType = "melee"}
+	end
+	
+	-- For ranged enemies, check if target is within 40 studs
+	if enemyType.enemyType == "ranged" then
+		local bestTarget, bestDistance = AISystem._findBestTarget(entityId)
+		if bestTarget then
+			local enemyFolder = workspace:FindFirstChild("Enemies"):FindFirstChild(tostring(entityId))
+			if enemyFolder then
+				local currentPosition = enemyFolder:GetAttribute("Position")
+				if currentPosition then
+					local distance = (currentPosition - bestTarget.position).Magnitude
+					if distance <= 40 then
+						-- Target is within 40 studs - allow attack
+						AISystem._callChaseHandler(entityId, enemyAI, bestTarget, currentTime)
+					else
+						-- Target is too far - return to idle
+						AISystem._setState(entityId, enemyAI, AI_STATES.IDLE)
+						enemyAI.target = nil
+						print("[AI] Ranged enemy", entityId, "target too far in attack chase (", math.floor(distance), "studs), returning to idle")
+					end
+				end
+			end
+		else
+			-- No valid target - return to idle
+			AISystem._setState(entityId, enemyAI, AI_STATES.IDLE)
+			enemyAI.target = nil
+			print("[AI] Ranged enemy", entityId, "no valid target in attack chase, returning to idle")
+		end
 	else
-		-- No valid target - return to idle
-		AISystem._setState(entityId, enemyAI, AI_STATES.IDLE)
-		enemyAI.target = nil
-		print("[AI] Entity", entityId, "no valid target in attack chase, returning to idle")
+		-- For melee and special enemies, same logic as normal chase but no zone restrictions
+		local bestTarget, bestDistance = AISystem._findBestTarget(entityId)
+		if bestTarget then
+			AISystem._callChaseHandler(entityId, enemyAI, bestTarget, currentTime)
+		else
+			-- No valid target - return to idle
+			AISystem._setState(entityId, enemyAI, AI_STATES.IDLE)
+			enemyAI.target = nil
+			print("[AI] Entity", entityId, "no valid target in attack chase, returning to idle")
+		end
 	end
 end
 
@@ -351,7 +383,7 @@ function AISystem._callChaseHandler(entityId, enemyAI, bestTarget, currentTime)
 		enemyType = {enemyType = "melee"}
 	end
 	
-	print("[AI] DEBUG: Entity", entityId, "enemyType:", enemyType.enemyType, "bestTarget valid:", bestTarget ~= nil)
+
 	
 	-- Validate inputs before calling chase handler
 	if not bestTarget or not bestTarget.target then
@@ -403,7 +435,13 @@ function AISystem._shouldUpdateEntity(entityId, enemyAI, currentTime)
 		updateInterval = CONFIG.UPDATE_INTERVAL_IDLE
 	end
 	
-	return (currentTime - lastUpdateTime) >= updateInterval
+	-- Additional throttling: Only update every 0.1 seconds (10 FPS max)
+	local timeSinceLastUpdate = currentTime - lastUpdateTime
+	if timeSinceLastUpdate < 0.1 then
+		return false
+	end
+	
+	return timeSinceLastUpdate >= updateInterval
 end
 
 -- Initialize system
@@ -497,13 +535,11 @@ end
 function AISystem.isPlayerInZone(entityId, player)
 	local zoneData = _G.enemyMovementZones and _G.enemyMovementZones[entityId]
 	if not zoneData then 
-		print("DEBUG: No zone data for entity", entityId)
 		return false 
 	end
 	
 	local character = player.Character
 	if not character or not character:FindFirstChild("HumanoidRootPart") then 
-		print("DEBUG: No character or HumanoidRootPart for player", player.Name)
 		return false 
 	end
 	
@@ -511,14 +547,6 @@ function AISystem.isPlayerInZone(entityId, player)
 	local zoneCenter = zoneData.cFrame.Position
 	local distance = (playerPosition - zoneCenter).Magnitude
 	local threshold = zoneData.size.X / 2
-	
-	print("DEBUG Zone Check - Entity:", entityId, "Player:", player.Name)
-	print("  Zone center:", zoneCenter)
-	print("  Zone size:", zoneData.size)
-	print("  Player position:", playerPosition)
-	print("  Distance:", distance)
-	print("  Threshold:", threshold)
-	print("  In zone:", distance <= threshold)
 	
 	return distance <= threshold -- 20 studs radius
 end
@@ -573,16 +601,7 @@ function AISystem.update(deltaTime)
         
         local currentState = enemyAI.state or AI_STATES.IDLE
 		
-		-- Debug: Log detection info occasionally
-		if currentTime % 5 < 0.1 then -- Log every 5 seconds
-			local playersInZone = 0
-			for _, player in pairs(Players:GetPlayers()) do
-				if AISystem.isPlayerInZone(entityId, player) then
-					playersInZone = playersInZone + 1
-				end
-			end
-			print("[AI] Entity", entityId, "State:", currentState, "Players in zone:", playersInZone)
-		end
+
 		
 		-- STEP 2: STATE PROCESSING
 		if currentState == AI_STATES.CHASE then

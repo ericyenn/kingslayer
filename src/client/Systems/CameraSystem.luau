@@ -46,11 +46,6 @@ local inputBeganConnection = nil
 local inputEndedConnection = nil
 local cameraChangedConnection = nil
 
--- Cache for performance optimization
-local lastFrameTime = tick()
-local TARGET_FPS = 60
-local FRAME_TIME_BUDGET = 1/TARGET_FPS
-
 -- Helper function for linear interpolation
 local function lerp(a, b, c)
     return a + (b - a) * c
@@ -113,20 +108,25 @@ local function calculateMovementBobbing(deltaTime)
         func1 = lerp(func1, 0, 0.1)
         func2 = lerp(func2, 0, 0.1)
     else
-        -- Only calculate bobbing if player is moving
+        -- Calculate bobbing based on movement state
         if rootMagnitude > 0.5 then
-            -- Pre-calculate time-based values with bobbing intensity
-            local timeValue = tick() * 14
+            -- Walking: More pronounced bobbing
+            local timeValue = tick() * 10 -- Slower pace for walking
             local cosTimeValue = math.cos(timeValue)
-            local cosTimeValueSlow = math.cos(timeValue * 0.9)
+            local cosTimeValueSlow = math.cos(timeValue * 0.8)
             
-            func1 = lerp(func1, cosTimeValue * 0.25 * scaledDeltaTime, 0.08 * scaledDeltaTime)
-            func2 = lerp(func2, cosTimeValueSlow * 0.15 * scaledDeltaTime, 0.08 * scaledDeltaTime)
+            -- Increased intensity for walking
+            func1 = lerp(func1, cosTimeValue * 0.6 * scaledDeltaTime, 0.1 * scaledDeltaTime)
+            func2 = lerp(func2, cosTimeValueSlow * 0.35 * scaledDeltaTime, 0.1 * scaledDeltaTime)
         else
-            -- Gradually reduce bobbing when stationary
-            local lerpFactor = 0.1 * deltaTime
-            func1 = lerp(func1, 0, lerpFactor)
-            func2 = lerp(func2, 0, lerpFactor)
+            -- Idle: Very subtle, slow bobbing
+            local timeValue = tick() * 6 -- Much slower for idle
+            local cosTimeValue = math.cos(timeValue)
+            local cosTimeValueSlow = math.cos(timeValue * 0.7)
+            
+            -- Very subtle intensity for idle
+            func1 = lerp(func1, cosTimeValue * 0.12 * scaledDeltaTime, 0.05 * scaledDeltaTime)
+            func2 = lerp(func2, cosTimeValueSlow * 0.08 * scaledDeltaTime, 0.05 * scaledDeltaTime)
         end
     end
     
@@ -138,11 +138,11 @@ local function calculateMovementBobbing(deltaTime)
     -- Create bobbing CFrame
     local isMoving = rootMagnitude > 0.5
     if isMoving then
-        -- Apply vertical bobbing and slight horizontal sway
-        return CFrame.fromEulerAnglesXYZ(math.rad(func1 * 1.5), math.rad(func2 * 1.0), math.rad(func1 * 0.5))
+        -- Apply more pronounced bobbing when walking
+        return CFrame.fromEulerAnglesXYZ(math.rad(func1 * 2.0), math.rad(func2 * 1.2), math.rad(func1 * 0.6))
     else
-        -- No movement bobbing when stationary
-        return CFrame.new()
+        -- Apply subtle bobbing when idle
+        return CFrame.fromEulerAnglesXYZ(math.rad(func1 * 0.8), math.rad(func2 * 0.4), math.rad(func1 * 0.2))
     end
 end
 
@@ -161,13 +161,6 @@ end
 
 -- Main camera update function
 local function updateCamera(deltaTime)
-    local currentFrameTime = tick()
-    
-    -- Performance protection: skip frame if budget exceeded
-    if currentFrameTime - lastFrameTime < FRAME_TIME_BUDGET * 0.8 then
-        return
-    end
-    
     -- Get character and humanoid for body rotation
     local character = player.Character
     local humanoid = character and character:FindFirstChild("Humanoid")
@@ -239,8 +232,6 @@ local function updateCamera(deltaTime)
             camera.CFrame = camera.CFrame * effectsTransform
         end
     end
-    
-    lastFrameTime = currentFrameTime
 end
 
 function CameraSystem:Initialize()
@@ -383,15 +374,6 @@ function CameraSystem:GetDistance()
     return distance
 end
 
--- Toggle between first-person and third-person
-function CameraSystem:ToggleDistance()
-    if distance <= 0.5 then
-        self:SetDistance(5) -- Switch to third-person
-    else
-        self:SetDistance(0.5) -- Switch to first-person
-    end
-end
-
 -- Enter spectate mode (called by SpectateUI when player dies)
 function CameraSystem:EnterSpectateMode()
     print("[CameraSystem] EnterSpectateMode called")
@@ -450,38 +432,6 @@ function CameraSystem:ExitSpectateMode()
     else
         print("[CameraSystem] No head found in character")
     end
-end
-
--- Legacy compatibility functions for screen shake (simplified)
-function CameraSystem:StartShake(duration, intensity, speed)
-    -- This new camera system doesn't have built-in shake
-    -- You could implement it here if needed
-    print("Screen shake not implemented in this camera system")
-end
-
-function CameraSystem:StopShake()
-    print("Screen shake not implemented in this camera system")
-end
-
-function CameraSystem:ShakeScreen(intensity, duration)
-    self:StartShake(duration, intensity, 15)
-end
-
--- Legacy compatibility for walk bobbing (not implemented in new system)
-function CameraSystem:StartWalkBobbing()
-    print("Walk bobbing not implemented in this camera system")
-end
-
-function CameraSystem:StopWalkBobbing()
-    print("Walk bobbing not implemented in this camera system")
-end
-
-function CameraSystem:StartCameraSway()
-    print("Camera sway not implemented in this camera system")
-end
-
-function CameraSystem:StopCameraSway()
-    print("Camera sway not implemented in this camera system")
 end
 
 function CameraSystem:ZoomIn()

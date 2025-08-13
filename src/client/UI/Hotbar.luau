@@ -117,9 +117,9 @@ function Hotbar:CreateSlot(slotNumber)
     itemIcon.BackgroundTransparency = 1
     itemIcon.Text = ""
     itemIcon.TextColor3 = Color3.fromRGB(255, 255, 255)
-    itemIcon.TextSize = 12 -- Smaller font for item name
+    itemIcon.TextSize = 18 -- Fixed small font for item name
     itemIcon.Font = Enum.Font.Gotham
-    itemIcon.TextScaled = true
+    itemIcon.TextScaled = false
     itemIcon.TextWrapped = true
     itemIcon.TextXAlignment = Enum.TextXAlignment.Center
     itemIcon.TextYAlignment = Enum.TextYAlignment.Center
@@ -133,8 +133,9 @@ function Hotbar:CreateSlot(slotNumber)
     slotNumberLabel.BackgroundTransparency = 1
     slotNumberLabel.Text = tostring(slotNumber == 10 and 0 or slotNumber) -- Show 0 for slot 10
     slotNumberLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
-    slotNumberLabel.TextSize = 14 -- Smaller font for slot number
-    slotNumberLabel.Font = Enum.Font.Gotham
+    slotNumberLabel.TextSize = 19 -- Smaller font for slot number
+    slotNumberLabel.Font = Enum.Font.SourceSans
+    slotNumberLabel.FontFace = Font.new("rbxasset://fonts/families/PatrickHand.json", Enum.FontWeight.Regular, Enum.FontStyle.Normal)
     slotNumberLabel.TextStrokeTransparency = 0
     slotNumberLabel.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
     slotNumberLabel.Parent = slotImage

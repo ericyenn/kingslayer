@@ -5,11 +5,12 @@ local AltarConfig = {}
 
 -- Main altar configuration
 AltarConfig.SETTINGS = {
-    requiredSacrifices = 3,
+    requiredSacrifices = 5, -- Changed from 3 to 5 enemy ragdolls
     requiredPlayerSacrifices = 1, -- Only need 1 player sacrifice
     cooldownTime = 30, -- seconds
-    rewardItem = "summoner",
-    requirePrayer = true -- Must pray to figure before reward triggers
+    rewardItem = "revive_plush", -- Changed from summoner to revive_plush
+    requirePrayer = true, -- Must pray to figure before reward triggers
+    successChance = 0.75 -- 75% chance of getting reward
 }
 
 -- Sacrifice requirements (simplified - any enemy with "Sacrifice" tag is valid)
@@ -21,7 +22,7 @@ AltarConfig.SACRIFICE_REQUIREMENTS = {
 
 -- Reward configuration
 AltarConfig.REWARD_CONFIG = {
-    itemId = "summoner",
+    itemId = "revive_plush", -- Changed from summoner to revive_plush
     spawnPosition = "altar_center" -- or "random_near_altar"
 }
 

@@ -13,17 +13,28 @@ function RewardProcessor:SpawnReward(altar, sacrifices, hasPlayerSacrifices)
     print("Sacrifices count:", #sacrifices)
     print("Has player sacrifices:", hasPlayerSacrifices)
     
+    -- Check success chance for enemy sacrifices (75% chance)
+    if not hasPlayerSacrifices then
+        local successChance = math.random()
+        if successChance > 0.75 then
+            print("Sacrifice failed - 75% chance missed")
+            -- Clean up sacrifices even on failure
+            self:CleanupSacrifices(sacrifices)
+            return false
+        end
+    end
+    
     -- Calculate spawn position
     local spawnPosition = self:CalculateSpawnPosition(altar)
     
     -- Determine which reward to spawn
     local success
     if hasPlayerSacrifices then
-        -- Spawn philosopher's stone if there are player sacrifices
+        -- Spawn philosopher's stone if there are player sacrifices (100% chance)
         success = self:SpawnPhilosophersStone(spawnPosition)
     else
-        -- Spawn summoner item for enemy sacrifices
-        success = self:SpawnSummoner(spawnPosition)
+        -- Spawn revive_plush item for enemy sacrifices
+        success = self:SpawnRevivePlush(spawnPosition)
     end
     
     if success then
@@ -50,8 +61,8 @@ function RewardProcessor:CalculateSpawnPosition(altar)
     end
 end
 
--- Spawn the summoner item
-function RewardProcessor:SpawnSummoner(position)
+-- Spawn the revive_plush item
+function RewardProcessor:SpawnRevivePlush(position)
     -- Get the ItemSpawnSystem from global
     local ItemSpawnSystem = _G.ItemSpawnSystem
     
@@ -60,15 +71,15 @@ function RewardProcessor:SpawnSummoner(position)
         return false
     end
     
-    -- Spawn the summoner item
-    local itemId = RewardConfig.SUMMONER_REWARD.itemId
+    -- Spawn the revive_plush item
+    local itemId = "revive_plush"
     local spawnedItem = ItemSpawnSystem.SpawnItem(itemId, position)
     
     if spawnedItem then
-        print("Spawned summoner item at:", position)
+        print("Spawned revive_plush item at:", position)
         return true
     else
-        warn("Failed to spawn summoner item")
+        warn("Failed to spawn revive_plush item")
         return false
     end
 end

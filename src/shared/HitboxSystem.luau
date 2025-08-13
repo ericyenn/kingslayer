@@ -1,6 +1,6 @@
 -- HitboxSystem.luau
 -- Unified hitbox system for both client and server detection
--- Replaces the current shapecast functionality with GetPartInPart
+-- Uses GetPartBoundsInBox for detection to cover the player as well
 
 local RunService = game:GetService("RunService")
 local Debris = game:GetService("Debris")
@@ -13,7 +13,7 @@ local HitboxConfig = require(script.Parent.HitboxConfig)
 -- Configuration
 local HITBOX_CONFIG = {
     -- Detection settings
-    useGetPartsInPart = true, -- Use GetPartsInPart for detection
+    useGetPartBoundsInBox = true, -- Use GetPartBoundsInBox for detection
     
     -- Performance settings
     maxHitboxesPerPlayer = 3,
@@ -34,7 +34,7 @@ local HITBOX_CONFIG = {
 local activeHitboxes = {}
 local hitboxPool = {} -- For reusing hitbox parts
 
--- Helper function to check if a part can take damage (copied from ToolHandler)
+-- Unified damage detection logic (single source of truth)
 local function canPartTakeDamage(part)
     if not part or not part.Parent then
         return false
@@ -57,6 +57,21 @@ local function canPartTakeDamage(part)
     local model = part.Parent
     while model and model ~= workspace do
         if CollectionService:HasTag(model, "Enemies") then
+            return true
+        end
+        model = model.Parent
+    end
+    
+    -- Check if the part's parent has a Humanoid (NPCs, players)
+    if parent and parent:FindFirstChild("Humanoid") then
+        return true
+    end
+    
+    -- Check if the part is part of a character model
+    -- Look for Humanoid in the model hierarchy
+    model = part.Parent
+    while model and model ~= workspace do
+        if model:FindFirstChild("Humanoid") then
             return true
         end
         model = model.Parent
@@ -107,7 +122,7 @@ local function returnHitboxToPool(hitbox)
     end
 end
 
--- Filter parts based on criteria
+-- Filter parts based on criteria (reused from GetPartsInPart logic)
 local function filterParts(parts, filters)
     local filteredParts = {}
     
@@ -157,36 +172,40 @@ local function filterParts(parts, filters)
     return filteredParts
 end
 
--- Get parts using GetPartsInPart with improved filtering
-local function getPartsInHitbox(detectionPart, filters)
-    -- Use GetPartsInPart with the detection part
-    local intersectingParts = workspace:GetPartsInPart(detectionPart)
+-- Get parts using GetPartBoundsInBox with improved filtering
+local function getPartsInHitboxBounds(playerPosition, playerForward, hitboxLength, hitboxSize, filters)
+    -- Create a bounding box that starts from the player and extends forward
+    -- The box should cover the player's character and extend in front of them
+    
+    -- Calculate the center of the bounding box (halfway between player and forward extent)
+    local boxCenter = playerPosition + (playerForward * (hitboxLength / 2))
+    
+    -- Calculate the size of the bounding box
+    -- Width: hitboxSize.X (character width)
+    -- Height: hitboxSize.Y (character height) 
+    -- Depth: hitboxLength (extends from player position forward)
+    local boxSize = Vector3.new(hitboxSize.X, hitboxSize.Y, hitboxLength)
+    
+    -- Create orientation based on player's facing direction
+    local orientation = CFrame.Angles(0, math.atan2(playerForward.X, playerForward.Z), 0)
+    
+    -- Use GetPartBoundsInBox with the bounding box
+    local boundsCFrame = CFrame.new(boxCenter) * orientation
+    local intersectingParts = workspace:GetPartBoundsInBox(boundsCFrame, boxSize)
     return filterParts(intersectingParts, filters)
 end
 
--- Note: GetPartBoundsInBox fallback removed - using only GetPartInPart
-
--- Main detection function
-function HitboxSystem.performDetection(character, centerPosition, radius, filters, orientation)
+-- Main detection function using GetPartBoundsInBox with player-centered bounding box
+function HitboxSystem.performDetection(character, playerPosition, playerForward, hitboxLength, hitboxSize, filters)
     filters = filters or {}
     filters.character = character
-    filters.centerPosition = centerPosition
+    filters.centerPosition = playerPosition
     
-    -- Use provided orientation or default to identity
-    orientation = orientation or CFrame.new()
-    
-    -- Create detection part with proper orientation
-    local detectionPart = createDetectionPart(radius, centerPosition, orientation)
-    detectionPart.Parent = workspace
-    
-    -- Get intersecting parts using GetPartInPart
-    local intersectingParts = getPartsInHitbox(detectionPart, filters)
+    -- Get intersecting parts using GetPartBoundsInBox with player-centered bounding box
+    local intersectingParts = getPartsInHitboxBounds(playerPosition, playerForward, hitboxLength, hitboxSize, filters)
     
     -- Debug output
-    print("HitboxSystem: Detection at", centerPosition, "with size", radius, "found", #intersectingParts, "parts")
-    
-    -- Clean up detection part
-    detectionPart:Destroy()
+    print("HitboxSystem: Detection from player position", playerPosition, "with length", hitboxLength, "found", #intersectingParts, "parts")
     
     return intersectingParts
 end
@@ -258,20 +277,28 @@ function HitboxSystem.getConfig()
     return HITBOX_CONFIG
 end
 
--- Get item-specific hitbox settings
+-- Get item-specific hitbox settings from ItemDefinitions
 function HitboxSystem.getItemSettings(itemName)
     local itemKey = string.lower(itemName)
     itemKey = string.gsub(itemKey, " ", "_")
     
     -- Get base settings from HitboxConfig
-    local settings = HitboxConfig.itemSettings[itemKey] or HitboxConfig.default
+    local settings = HitboxConfig.default
     
-    -- Override cooldown with ItemDefinition if available
+    -- Override with ItemDefinitions if available
     local ItemDefinitions = require(game:GetService("ReplicatedStorage").Shared.ItemDefinitions)
     local itemDef = ItemDefinitions:GetItem(itemKey)
     
-    if itemDef and itemDef.actionData and itemDef.actionData.cooldown then
-        settings.cooldown = itemDef.actionData.cooldown
+    if itemDef and itemDef.actionData then
+        -- Use hitboxLength from ItemDefinitions if available
+        if itemDef.actionData.hitboxLength then
+            settings.distance = itemDef.actionData.hitboxLength
+        end
+        
+        -- Override cooldown with ItemDefinition if available
+        if itemDef.actionData.cooldown then
+            settings.cooldown = itemDef.actionData.cooldown
+        end
     end
     
     return settings
@@ -285,5 +312,8 @@ function HitboxSystem.getEnemySettings(enemyType)
     end
     return HitboxConfig.enemySettings[enemyType] or HitboxConfig.default
 end
+
+-- Export the unified damage detection function
+HitboxSystem.canPartTakeDamage = canPartTakeDamage
 
 return HitboxSystem 

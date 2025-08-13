@@ -2,7 +2,7 @@
 local CriticalAttackUI = {}
 
 local Players = game:GetService("Players")
-local RunService = game:GetService("RunService")
+local _RunService = game:GetService("RunService")
 local TweenService = game:GetService("TweenService")
 
 local player = Players.LocalPlayer
@@ -10,11 +10,11 @@ local playerGui = player:WaitForChild("PlayerGui")
 
 -- Configuration
 local BAR_CONFIG = {
-    width = 18,  -- Scaled up from 12 to 18 (1.5x larger)
-    height = 150, -- Scaled up from 100 to 150 (1.5x larger)
+    width = 12,  -- Made thinner (reduced from 18 to 12)
+    height = 120, -- Made shorter (reduced from 150 to 120)
     offsetX = -60, -- Adjusted offset for bigger bar (1.5x larger)
-    backgroundColor = Color3.fromRGB(45, 45, 45), -- Dark gray like dialogue UI
-    borderColor = Color3.fromRGB(120, 120, 120),
+    backgroundColor = Color3.fromRGB(25, 25, 25), -- Darker background
+    borderColor = Color3.fromRGB(80, 80, 80), -- Darker border
     transparency = 0.3 -- Increased opacity (more transparent) for better visibility
 }
 
@@ -42,7 +42,7 @@ local chargeFillFrame = nil -- New: fill frame for charging mode
 
 -- State tracking
 local isBarVisible = false
-local indicatorAnimation = nil
+local _indicatorAnimation = nil
 local currentCriticalZone = nil
 local currentMode = "HIDDEN" -- "HIDDEN", "CHARGING", or "TIMING"
 local chargeProgress = 0.0 -- 0.0 to 1.0
@@ -88,10 +88,30 @@ function CriticalAttackUI:CreateCriticalBarUI()
     chargeFillFrame.Name = "ChargeFill"
     chargeFillFrame.Size = UDim2.new(1, 0, 0, 0) -- Start with no height
     chargeFillFrame.Position = UDim2.new(0, 0, 1, 0) -- Start at bottom
-    chargeFillFrame.BackgroundColor3 = Color3.fromRGB(255, 255, 255) -- White fill
+    chargeFillFrame.BackgroundColor3 = Color3.fromRGB(255, 165, 0) -- Start with orange
     chargeFillFrame.BackgroundTransparency = 0.2 -- Slightly transparent
     chargeFillFrame.BorderSizePixel = 0
     chargeFillFrame.Parent = criticalBarFrame
+    -- Vertical gradient for 3D effect on charge (subtle, darker near the top)
+    do
+        local existing = chargeFillFrame:FindFirstChildOfClass("UIGradient")
+        if existing then existing:Destroy() end
+        local g = Instance.new("UIGradient")
+        g.Name = "ChargeGradient"
+        g.Rotation = 90
+        -- Slightly darken the top by tinting; keep middle/bottom brighter
+        g.Color = ColorSequence.new({
+            ColorSequenceKeypoint.new(0.0, Color3.fromRGB(230, 230, 230)),
+            ColorSequenceKeypoint.new(0.5, Color3.fromRGB(255, 255, 255)),
+            ColorSequenceKeypoint.new(1.0, Color3.fromRGB(245, 245, 245)),
+        })
+        g.Transparency = NumberSequence.new({
+            NumberSequenceKeypoint.new(0.0, 0.03),
+            NumberSequenceKeypoint.new(0.5, 0.0),
+            NumberSequenceKeypoint.new(1.0, 0.08),
+        })
+        g.Parent = chargeFillFrame
+    end
     
     -- No rounded corners for charge fill
     
@@ -104,7 +124,29 @@ function CriticalAttackUI:CreateCriticalBarUI()
     criticalZoneFrame.Parent = criticalBarFrame
     criticalZoneFrame.Visible = false -- Hidden during charging mode
     
-    -- No rounded corners for critical zone
+    -- Add a vertical transparency gradient: solid green center, slightly more transparent towards the long edges (top/bottom)
+    do
+        local existing = criticalZoneFrame:FindFirstChildOfClass("UIGradient")
+        if existing then existing:Destroy() end
+        local g = Instance.new("UIGradient")
+        g.Name = "CriticalZoneGradient"
+        g.Rotation = 90
+        -- Keep uniform color; only vary transparency vertically
+        g.Color = ColorSequence.new({
+            ColorSequenceKeypoint.new(0.0, Color3.new(1,1,1)),
+            ColorSequenceKeypoint.new(0.5, Color3.new(1,1,1)),
+            ColorSequenceKeypoint.new(1.0, Color3.new(1,1,1)),
+        })
+        -- Strongest opacity at center; subtle fade towards top and bottom edges
+        g.Transparency = NumberSequence.new({
+            NumberSequenceKeypoint.new(0.0, 0.5),
+            NumberSequenceKeypoint.new(0.25, 0.2),
+            NumberSequenceKeypoint.new(0.5, 0.0),
+            NumberSequenceKeypoint.new(0.75, 0.2),
+            NumberSequenceKeypoint.new(1.0, 0.5),
+        })
+        g.Parent = criticalZoneFrame
+    end
     
     -- Moving indicator frame
     indicatorFrame = Instance.new("Frame")
@@ -153,6 +195,12 @@ function CriticalAttackUI:UpdateChargeProgress(progress)
     local fillHeight = chargeProgress
     chargeFillFrame.Size = UDim2.new(1, 0, fillHeight, 0)
     chargeFillFrame.Position = UDim2.new(0, 0, 1 - fillHeight, 0)
+    
+    -- Update color from orange to white based on progress
+    local orangeColor = Color3.fromRGB(255, 165, 0)
+    local whiteColor = Color3.fromRGB(255, 255, 255)
+    local currentColor = orangeColor:Lerp(whiteColor, chargeProgress)
+    chargeFillFrame.BackgroundColor3 = currentColor
     
     -- Check if we should transition to timing mode
     if chargeProgress >= 1.0 then

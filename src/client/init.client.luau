@@ -2,13 +2,30 @@
 local Players = game:GetService("Players")
 local StarterGui = game:GetService("StarterGui")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local RunService = game:GetService("RunService")
 
 -- Disable Roblox's default inventory system
 StarterGui:SetCoreGuiEnabled(Enum.CoreGuiType.Backpack, false)
 print("✅ Disabled Roblox default inventory")
 
 local player = Players.LocalPlayer
+-- Preload CompassUI (hidden) and react to unlock
+local function setupCompassUI()
+    local RemoteEvents = require(ReplicatedStorage.Shared.RemoteEvents)
+    local CompassUI = require(script.UI.CompassUI)
+    CompassUI:Initialize()
+    local function checkAndShow()
+        if player:GetAttribute("HasCompass") then
+            CompassUI:Show()
+        end
+    end
+    checkAndShow()
+    player:GetAttributeChangedSignal("HasCompass"):Connect(checkAndShow)
+    if RemoteEvents.CompassUnlocked then
+        RemoteEvents.CompassUnlocked.OnClientEvent:Connect(function()
+            CompassUI:Show()
+        end)
+    end
+end
 
 -- Wait for character to load with timeout
 local function waitForCharacterWithTimeout(timeoutSeconds)
@@ -193,6 +210,12 @@ local systemInitializationOrder = {
 
     
     -- UI components
+    {
+        name = "NotificationUI",
+        module = require(script.NotificationUI),
+        maxRetries = 2
+    },
+    
     {
         name = "HealthBar",
         module = require(script.UI.HealthBar),
@@ -453,4 +476,10 @@ if #failedSystems > 0 then
     end
 else
     print("🎉 All systems initialized successfully!")
+end
+
+-- Post-initialization: setup Compass UI unlock handler
+local successCompass, errCompass = pcall(setupCompassUI)
+if not successCompass then
+    warn("CompassUI setup failed:", errCompass)
 end

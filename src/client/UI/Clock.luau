@@ -7,33 +7,26 @@ local playerGui = player:WaitForChild("PlayerGui")
 
 local RemoteEvents = require(ReplicatedStorage.Shared.RemoteEvents)
 
-local screenGui = Instance.new("ScreenGui")
-screenGui.Name = "ClockUI"
-screenGui.ResetOnSpawn = false
-screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-screenGui.Parent = playerGui
+-- Defer to HealthBar's clock title/value if present; otherwise create standalone UI
+-- Removed standalone clock: HealthBar location is the ONLY display
 
-local clockLabel = Instance.new("TextLabel")
-clockLabel.Name = "ClockLabel"
-clockLabel.Size = UDim2.new(0, 180, 0, 40)
-clockLabel.Position = UDim2.new(1, -200, 0, 20) -- Top right
-clockLabel.BackgroundTransparency = 0.3
-clockLabel.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
-clockLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
-clockLabel.TextStrokeTransparency = 0.5
-clockLabel.TextSize = 28
-clockLabel.Font = Enum.Font.GothamBold
-clockLabel.Text = "00:00"
-clockLabel.Parent = screenGui
-
-local function formatClockTime(clockTime)
-	local hour = math.floor(clockTime)
-	local minute = math.floor((clockTime - hour) * 60)
-	return string.format("%02d:%02d", hour, minute)
+local function formatClockHourAmPm(clockTime)
+    local hour = math.floor(clockTime) % 24
+    local period = (hour >= 12) and "PM" or "AM"
+    local hour12 = hour % 12
+    if hour12 == 0 then hour12 = 12 end
+    return string.format("%d %s", hour12, period)
 end
 
 RemoteEvents.ClockUpdate.OnClientEvent:Connect(function(clockTime)
-	clockLabel.Text = formatClockTime(clockTime)
+    -- HealthBar location is the ONLY display
+    local hbGui = playerGui:FindFirstChild("HealthbarUI")
+    local clockBg = hbGui and hbGui:FindFirstChild("ClockTitleBackground")
+    local clockVal = clockBg and clockBg:FindFirstChild("ClockValue")
+    if clockVal and clockVal:IsA("TextLabel") then
+        local hasClock = player:GetAttribute("HasClock") == true
+        clockVal.Text = hasClock and formatClockHourAmPm(clockTime) or "???"
+    end
 end)
 
 function ClockUI:Initialize()

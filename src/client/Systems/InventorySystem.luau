@@ -158,7 +158,6 @@ function InventorySystem:PickupToInventory(object)
         -- Apply prediction immediately
         local itemId = self:GetItemIdFromObject(object)
         local inventoryItem = {
-            object = object,
             itemName = object.Name,
             itemId = itemId,
             icon = self:GetItemIcon(itemId), -- Temporary icon
@@ -377,28 +376,7 @@ function InventorySystem:HandleSlotSelection(slotNumber)
     print("=== SLOT SELECTION DEBUG END ===")
 end
 
-function InventorySystem:GetEquippedItem()
-    -- Simplified logging
-    
-    -- Get currently equipped item for armor system integration
-    if equippedSlot and playerInventory[equippedSlot] then
-        local inventoryItem = playerInventory[equippedSlot]
-        
-        -- Use stored itemId if available, otherwise generate from object
-        local itemId = inventoryItem.itemId or self:GetItemIdFromObject(inventoryItem.object)
-        
-        local result = {
-            itemName = inventoryItem.itemName,
-            itemId = itemId,
-            object = inventoryItem.object,
-            slot = equippedSlot
-        }
-        
-        return result
-    else
-        return nil
-    end
-end
+
 
 function InventorySystem:GetItemIdFromObject(object)
     -- Helper function to get item ID from object name
@@ -443,7 +421,6 @@ function InventorySystem:HandleArmorUnequipped(armorItem)
     
     -- Add armor back to hotbar inventory
     local inventoryItem = {
-        object = armorItem.object,
         itemName = armorItem.itemName,
         itemId = armorItem.itemId,  -- Include itemId for proper item identification
         icon = self:GetItemIcon(armorItem.itemId)
@@ -566,20 +543,7 @@ function InventorySystem:SwapSlots(slot1, slot2)
     print("Final result - equipped slot:", equippedSlot)
 end
 
-function InventorySystem:EquipSlotDirect(slot)
-    -- Request equip slot to server
-    local success, result, message = pcall(function()
-        return RemoteEvents.InventoryRequest:InvokeServer("equip_slot", slot)
-    end)
 
-    if success and result then
-        self:EquipSlot(slot)
-        return true
-    else
-        warn("EquipSlotDirect failed:", message)
-        return false
-    end
-end
 
 -- Method called by ArmorSystem to get currently equipped item
 function InventorySystem:GetEquippedItem()
@@ -620,13 +584,12 @@ function InventorySystem:UpdateInventoryFromServer(serverInventory)
     for slot, inventoryItem in pairs(serverInventory) do
         if inventoryItem then
             -- Get itemId from object name if not provided
-            local itemId = inventoryItem.itemId or self:GetItemIdFromObject(inventoryItem.object or {Name = inventoryItem.itemName})
+            local itemId = inventoryItem.itemId or self:GetItemIdFromObject({Name = inventoryItem.itemName})
             
             playerInventory[slot] = {
                 itemName = inventoryItem.itemName,
                 itemId = itemId,  -- Include itemId
-                icon = inventoryItem.icon,
-                object = inventoryItem.object  -- Include object if available
+                icon = inventoryItem.icon
             }
         end
     end
